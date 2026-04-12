@@ -1,11 +1,21 @@
-const ROWS = 21;
-const COLS = 31;
-const CELL_SIZE = 24;
-const EXIT_COUNT = 3;
+const ROWS = 31;
+const COLS = 51;
+const CELL_SIZE = 18;
+const EXIT_COUNT = 4;
 const START_POSITION = [1, 1];
 const MAX_GENERATION_ATTEMPTS = 20;
 const VISITED_CELL_DELAY_MS = 12;
 const PATH_CELL_DELAY_MS = 30;
+
+// Complexity features - Many Walls Maze (Nhiều tường)
+const ROOM_COUNT = 0;
+const ROOM_MIN_SIZE = 5;
+const ROOM_MAX_SIZE = 12;
+const LOOP_CARVE_RATE = 0.15;
+const MIN_START_BRANCHES = 3;
+const ENEMY_COUNT = 3;
+const ENEMY_MIN_DISTANCE = 8;
+const BRAID_RATE = 0.10;
 
 const canvas = document.getElementById("mazeCanvas");
 const ctx = canvas.getContext("2d");
@@ -21,6 +31,8 @@ let maze = [];
 let start = [...START_POSITION];
 /** @type {Array<[number, number]>} */
 let exits = [];
+/** @type {Array<[number, number]>} */
+let enemies = [];
 let isAnimating = false;
 
 function inBounds(r, c) {
@@ -50,6 +62,148 @@ function shuffle(array) {
 function createGrid(rows, cols, fillValue = 1) {
   return Array.from({ length: rows }, () => Array(cols).fill(fillValue));
 }
+
+function carveRooms(grid) {
+  for (let attempt = 0; attempt < ROOM_COUNT * 3; attempt += 1) {
+    const rh = ROOM_MIN_SIZE + Math.floor(Math.random() * (ROOM_MAX_SIZE - ROOM_MIN_SIZE + 1));
+    const rw = ROOM_MIN_SIZE + Math.floor(Math.random() * (ROOM_MAX_SIZE - ROOM_MIN_SIZE + 1));
+    const r = 2 + Math.floor(Math.random() * Math.max(1, (ROWS - rh - 4) / 2)) * 2;
+    const c = 2 + Math.floor(Math.random() * Math.max(1, (COLS - rw - 4) / 2)) * 2;
+    
+    if (r + rh >= ROWS - 1 || c + rw >= COLS - 1) continue;
+    if (r === START_POSITION[0] && c === START_POSITION[1]) continue;
+    
+    let hasExit = false;
+    for (let rr = r; rr < r + rh && rr < ROWS; rr += 1) {
+      for (let cc = c; cc < c + rw && cc < COLS; cc += 1) {
+        if (rr === r || rr === r + rh - 1 || cc === c || cc === c + rw - 1) {
+          const hasAdjacentPassage = neighbors4(rr, cc).some(([nr, nc]) => {
+            return inBounds(nr, nc) && grid[nr][nc] === 0 && (nr < r || nr >= r + rh || nc < c || nc >= c + rw);
+          });
+          if (hasAdjacentPassage) {
+            hasExit = true;
+            break;
+          }
+        }
+      }
+      if (hasExit) break;
+    }
+    
+    if (!hasExit) continue;
+    
+    for (let rr = r; rr < r + rh && rr < ROWS; rr += 1) {
+      for (let cc = c; cc < c + rw && cc < COLS; cc += 1) {
+        grid[rr][cc] = 0;
+      }
+    }
+  }
+}
+
+function carveLoops(grid) {
+  const wallCells = [];
+  for (let r = 1; r < ROWS - 1; r += 1) {
+    for (let c = 1; c < COLS - 1; c += 1) {
+      if (grid[r][c] !== 1) continue;
+      const ns = neighbors4(r, c).filter(([nr, nc]) => grid[nr][nc] === 0);
+      if (ns.length >= 2) {
+        const vert = ns.filter(([nr]) => nr !== r);
+        const horiz = ns.filter(([, nc]) => nc !== c);
+        if ((vert.length === 2 && horiz.length === 0) || (horiz.length === 2 && vert.length === 0)) {
+          wallCells.push([r, c]);
+        }
+      }
+    }
+  }
+  
+  shuffle(wallCells);
+  const target = Math.ceil(wallCells.length * LOOP_CARVE_RATE);
+  for (let i = 0; i < Math.min(target, wallCells.length); i += 1) {
+    const [r, c] = wallCells[i];
+    grid[r][c] = 0;
+  }
+}
+
+function ensureStartBranches(grid, source) {
+  const ns = neighbors4(source[0], source[1]).filter(([nr, nc]) => grid[nr][nc] === 0);
+  if (ns.length < MIN_START_BRANCHES) {
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      const [sr, sc] = START_POSITION;
+      const dirs = [[sr - 1, sc], [sr + 1, sc], [sr, sc - 1], [sr, sc + 1]];
+      shuffle(dirs);
+      for (const [nr, nc] of dirs) {
+        if (!inBounds(nr, nc) || grid[nr][nc] === 0) continue;
+        const openNeighbors = neighbors4(nr, nc).filter(([nnr, nnc]) => grid[nnr][nnc] === 0);
+        if (openNeighbors.length > 0) {
+          grid[nr][nc] = 0;
+          return;
+        }
+      }
+    }
+  }
+}
+
+function placeEnemies(grid, source, existingExits) {
+  const dist = bfsDistances(grid, source);
+  const usedKeys = new Set();
+  
+  for (const [r, c] of [source, ...existingExits]) {
+    usedKeys.add(key(r, c));
+  }
+  
+  const candidates = [];
+  for (let r = 1; r < ROWS - 1; r += 1) {
+    for (let c = 1; c < COLS - 1; c += 1) {
+      const k = key(r, c);
+      if (usedKeys.has(k) || grid[r][c] !== 0) continue;
+      const d = dist[r][c];
+      if (d >= ENEMY_MIN_DISTANCE) {
+        candidates.push({ pos: [r, c], dist: d });
+      }
+    }
+  }
+  
+  candidates.sort((a, b) => b.dist - a.dist);
+  const selected = [];
+  for (const c of candidates) {
+    if (selected.length >= ENEMY_COUNT) break;
+    selected.push(c.pos);
+    usedKeys.add(key(c.pos[0], c.pos[1]));
+  }
+  
+  return selected;
+}
+
+function braidMaze(grid) {
+  const deadEnds = [];
+  for (let r = 1; r < ROWS - 1; r += 1) {
+    for (let c = 1; c < COLS - 1; c += 1) {
+      if (grid[r][c] !== 0) continue;
+      const ns = neighbors4(r, c).filter(([nr, nc]) => grid[nr][nc] === 0);
+      if (ns.length === 1) {
+        deadEnds.push([r, c]);
+      }
+    }
+  }
+  
+  shuffle(deadEnds);
+  const target = Math.ceil(deadEnds.length * BRAID_RATE);
+  for (let i = 0; i < Math.min(target, deadEnds.length); i += 1) {
+    const [r, c] = deadEnds[i];
+    const wallNeighbors = [];
+    for (const [nr, nc] of [[r - 1, c], [r + 1, c], [r, c - 1], [r, c + 1]]) {
+      if (!inBounds(nr, nc) || grid[nr][nc] !== 1) continue;
+      const wallNeighbors2 = neighbors4(nr, nc).filter(([nnr, nnc]) => grid[nnr][nnc] === 0);
+      if (wallNeighbors2.length > 0) {
+        wallNeighbors.push([nr, nc]);
+      }
+    }
+    if (wallNeighbors.length > 0) {
+      const [wr, wc] = wallNeighbors[Math.floor(Math.random() * wallNeighbors.length)];
+      grid[wr][wc] = 0;
+    }
+  }
+}
+
 
 function generateMazeBase() {
   const grid = createGrid(ROWS, COLS, 1);
@@ -159,16 +313,26 @@ function placeDistinctExits(grid, source, desired = EXIT_COUNT) {
 function generateMazeWithExits() {
   for (let attempt = 0; attempt < MAX_GENERATION_ATTEMPTS; attempt += 1) {
     const grid = generateMazeBase();
+    if (ROOM_COUNT > 0) carveRooms(grid);
+    carveLoops(grid);
+    braidMaze(grid);
     const source = [...START_POSITION];
     const generatedExits = placeDistinctExits(grid, source, EXIT_COUNT);
+    ensureStartBranches(grid, source);
+    const generatedEnemies = placeEnemies(grid, source, generatedExits);
     if (generatedExits.length >= 2) {
-      return { grid, source, generatedExits };
+      return { grid, source, generatedExits, generatedEnemies };
     }
   }
 
   const fallbackGrid = generateMazeBase();
+  if (ROOM_COUNT > 0) carveRooms(fallbackGrid);
+  carveLoops(fallbackGrid);
+  braidMaze(fallbackGrid);
   const fallbackExits = placeDistinctExits(fallbackGrid, [...START_POSITION], 2);
-  return { grid: fallbackGrid, source: [...START_POSITION], generatedExits: fallbackExits };
+  ensureStartBranches(fallbackGrid, [...START_POSITION]);
+  const fallbackEnemies = placeEnemies(fallbackGrid, [...START_POSITION], fallbackExits);
+  return { grid: fallbackGrid, source: [...START_POSITION], generatedExits: fallbackExits, generatedEnemies: fallbackEnemies };
 }
 
 function reconstructPath(parent, end) {
@@ -288,6 +452,10 @@ function drawMaze(overlays = {}) {
     drawCell(er, ec, "#22c55e");
   }
 
+  for (const [er, ec] of enemies) {
+    drawCell(er, ec, "#a855f7");
+  }
+
   if (source) {
     drawCell(source[0], source[1], "#2563eb");
   }
@@ -337,10 +505,11 @@ async function animateResult(visitedOrder, pathNodes, exitNode) {
 }
 
 function resetMaze() {
-  const { grid, source, generatedExits } = generateMazeWithExits();
+  const { grid, source, generatedExits, generatedEnemies } = generateMazeWithExits();
   maze = grid;
   start = source;
   exits = generatedExits;
+  enemies = generatedEnemies;
   statusText.textContent = "Đã tạo mê cung mới.";
   statsText.textContent = "Bước đi: -, Đã duyệt: -, Thời gian: -, Lối ra: -";
   drawMaze({ source: start });
@@ -348,8 +517,10 @@ function resetMaze() {
 
 async function solveMaze() {
   if (isAnimating) return;
-  if (!exits.length) {
-    statusText.textContent = "Không có lối ra hợp lệ.";
+  
+  const targets = [...exits, ...enemies];
+  if (!targets.length) {
+    statusText.textContent = "Không có mục tiêu hợp lệ.";
     return;
   }
 
@@ -357,12 +528,12 @@ async function solveMaze() {
   statusText.textContent = `Đang giải mê cung bằng ${algorithm.toUpperCase()}...`;
   const startTime = performance.now();
   const result =
-    algorithm === "astar" ? solveAStar(maze, start, exits) : solveBFS(maze, start, exits);
+    algorithm === "astar" ? solveAStar(maze, start, targets) : solveBFS(maze, start, targets);
   const elapsed = (performance.now() - startTime).toFixed(2);
 
   if (!result.path.length || !result.exit) {
     statusText.textContent = "Không tìm thấy đường đi.";
-    statsText.textContent = `Bước đi: -, Đã duyệt: ${result.visitedOrder.length}, Thời gian: ${elapsed} ms, Lối ra: -`;
+    statsText.textContent = `Bước đi: -, Đã duyệt: ${result.visitedOrder.length}, Thời gian: ${elapsed} ms, Mục tiêu: -`;
     drawMaze({ source: start });
     return;
   }
@@ -370,8 +541,10 @@ async function solveMaze() {
   await animateResult(result.visitedOrder, result.path, result.exit);
 
   const stepCount = Math.max(result.path.length - 1, 0);
+  const isExit = exits.some(([r, c]) => r === result.exit[0] && c === result.exit[1]);
+  const goalType = isExit ? "Lối ra" : "Địch";
   statusText.textContent = `Hoàn thành bằng ${algorithm.toUpperCase()}.`;
-  statsText.textContent = `Bước đi: ${stepCount}, Đã duyệt: ${result.visitedOrder.length}, Thời gian: ${elapsed} ms, Lối ra: (${result.exit[0]}, ${result.exit[1]})`;
+  statsText.textContent = `Bước đi: ${stepCount}, Đã duyệt: ${result.visitedOrder.length}, Thời gian: ${elapsed} ms, ${goalType}: (${result.exit[0]}, ${result.exit[1]})`;
 }
 
 generateBtn.addEventListener("click", resetMaze);
