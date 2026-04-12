@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Trình giải mê cung AI</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="container">
+      <h1>Trình giải mê cung AI</h1>
+
+      <section class="controls">
+        <button id="generateBtn">Tạo mê cung</button>
+        <label for="algorithmSelect">Thuật toán:</label>
+        <select id="algorithmSelect">
+          <option value="bfs">BFS</option>
+          <option value="astar">A*</option>
+        </select>
+        <button id="solveBtn">Giải mê cung</button>
+      </section>
+
+      <section class="info">
+        <p id="statusText">Sẵn sàng.</p>
+        <p id="statsText">Bước đi: -, Đã duyệt: -, Thời gian: -, Lối ra: -</p>
+      </section>
+
+      <section class="maze-wrapper">
+        <canvas id="mazeCanvas" width="744" height="504"></canvas>
+      </section>
+    </main>
+
+    <script src="./script.js"></script>
+  </body>
+  </html>
