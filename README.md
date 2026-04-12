@@ -10,10 +10,10 @@
 
 Đây là dự án thuần HTML/CSS/JS, không cần cài package.
 
-1. Mở file `/home/runner/work/TTNT/TTNT/index.html` bằng trình duyệt
-2. Bấm **Random Maze** để tạo mê cung mới
+1. Mở file `index.html` trong thư mục dự án bằng trình duyệt
+2. Bấm **Tạo mê cung** để tạo mê cung mới
 3. Chọn thuật toán (**BFS** hoặc **A***)
-4. Bấm **Solve** để AI tìm đường ngắn nhất
+4. Bấm **Giải mê cung** để AI tìm đường ngắn nhất
 
 ## Tính năng
 

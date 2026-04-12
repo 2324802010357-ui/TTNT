@@ -338,7 +338,7 @@ function resetMaze() {
   start = source;
   exits = generatedExits;
   statusText.textContent = "Đã tạo mê cung mới.";
-  statsText.textContent = "Bước đi: -, Đã duyệt: -, Thời gian: -, Exit: -";
+  statsText.textContent = "Bước đi: -, Đã duyệt: -, Thời gian: -, Lối ra: -";
   drawMaze({ source: start });
 }
 
@@ -358,7 +358,7 @@ async function solveMaze() {
 
   if (!result.path.length || !result.exit) {
     statusText.textContent = "Không tìm thấy đường đi.";
-    statsText.textContent = `Bước đi: -, Đã duyệt: ${result.visitedOrder.length}, Thời gian: ${elapsed} ms, Exit: -`;
+    statsText.textContent = `Bước đi: -, Đã duyệt: ${result.visitedOrder.length}, Thời gian: ${elapsed} ms, Lối ra: -`;
     drawMaze({ source: start });
     return;
   }
@@ -367,7 +367,7 @@ async function solveMaze() {
 
   const stepCount = Math.max(result.path.length - 1, 0);
   statusText.textContent = `Hoàn thành bằng ${algorithm.toUpperCase()}.`;
-  statsText.textContent = `Bước đi: ${stepCount}, Đã duyệt: ${result.visitedOrder.length}, Thời gian: ${elapsed} ms, Exit: (${result.exit[0]}, ${result.exit[1]})`;
+  statsText.textContent = `Bước đi: ${stepCount}, Đã duyệt: ${result.visitedOrder.length}, Thời gian: ${elapsed} ms, Lối ra: (${result.exit[0]}, ${result.exit[1]})`;
 }
 
 generateBtn.addEventListener("click", resetMaze);
