@@ -2,6 +2,10 @@ const ROWS = 21;
 const COLS = 31;
 const CELL_SIZE = 24;
 const EXIT_COUNT = 3;
+const START_POSITION = [1, 1];
+const MAX_GENERATION_ATTEMPTS = 20;
+const VISITED_CELL_DELAY_MS = 12;
+const PATH_CELL_DELAY_MS = 30;
 
 const canvas = document.getElementById("mazeCanvas");
 const ctx = canvas.getContext("2d");
@@ -14,7 +18,7 @@ const statsText = document.getElementById("statsText");
 /** @type {number[][]} */
 let maze = [];
 /** @type {[number, number]} */
-let start = [1, 1];
+let start = [...START_POSITION];
 /** @type {Array<[number, number]>} */
 let exits = [];
 let isAnimating = false;
@@ -49,8 +53,8 @@ function createGrid(rows, cols, fillValue = 1) {
 
 function generateMazeBase() {
   const grid = createGrid(ROWS, COLS, 1);
-  const stack = [[1, 1]];
-  grid[1][1] = 0;
+  const stack = [[...START_POSITION]];
+  grid[START_POSITION[0]][START_POSITION[1]] = 0;
 
   while (stack.length > 0) {
     const [r, c] = stack[stack.length - 1];
@@ -153,9 +157,9 @@ function placeDistinctExits(grid, source, desired = EXIT_COUNT) {
 }
 
 function generateMazeWithExits() {
-  for (let attempt = 0; attempt < 20; attempt += 1) {
+  for (let attempt = 0; attempt < MAX_GENERATION_ATTEMPTS; attempt += 1) {
     const grid = generateMazeBase();
-    const source = [1, 1];
+    const source = [...START_POSITION];
     const generatedExits = placeDistinctExits(grid, source, EXIT_COUNT);
     if (generatedExits.length >= 2) {
       return { grid, source, generatedExits };
@@ -163,8 +167,8 @@ function generateMazeWithExits() {
   }
 
   const fallbackGrid = generateMazeBase();
-  const fallbackExits = placeDistinctExits(fallbackGrid, [1, 1], 2);
-  return { grid: fallbackGrid, source: [1, 1], generatedExits: fallbackExits };
+  const fallbackExits = placeDistinctExits(fallbackGrid, [...START_POSITION], 2);
+  return { grid: fallbackGrid, source: [...START_POSITION], generatedExits: fallbackExits };
 }
 
 function reconstructPath(parent, end) {
@@ -318,13 +322,13 @@ async function animateResult(visitedOrder, pathNodes, exitNode) {
   for (const [r, c] of visitedOrder) {
     visitedSet.add(key(r, c));
     drawMaze({ visited: visitedSet, path: pathSet, source: start, goal: exitNode });
-    await new Promise((resolve) => setTimeout(resolve, 12));
+    await new Promise((resolve) => setTimeout(resolve, VISITED_CELL_DELAY_MS));
   }
 
   for (const [r, c] of pathNodes) {
     pathSet.add(key(r, c));
     drawMaze({ visited: visitedSet, path: pathSet, source: start, goal: exitNode });
-    await new Promise((resolve) => setTimeout(resolve, 30));
+    await new Promise((resolve) => setTimeout(resolve, PATH_CELL_DELAY_MS));
   }
 
   isAnimating = false;
