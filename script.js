@@ -68,9 +68,9 @@ function generateMazeBase() {
 
     shuffle(candidates);
     const [nr, nc] = candidates[0];
-    const wallR = (r + nr) / 2;
-    const wallC = (c + nc) / 2;
-    grid[wallR][wallC] = 0;
+    const wallRow = (r + nr) / 2;
+    const wallCol = (c + nc) / 2;
+    grid[wallRow][wallCol] = 0;
     grid[nr][nc] = 0;
     stack.push([nr, nc]);
   }
@@ -81,11 +81,11 @@ function generateMazeBase() {
 function bfsDistances(grid, source) {
   const dist = createGrid(ROWS, COLS, -1);
   const q = [source];
-  let head = 0;
+  let queueIndex = 0;
   dist[source[0]][source[1]] = 0;
 
-  while (head < q.length) {
-    const [r, c] = q[head++];
+  while (queueIndex < q.length) {
+    const [r, c] = q[queueIndex++];
     for (const [nr, nc] of neighbors4(r, c)) {
       if (grid[nr][nc] !== 0 || dist[nr][nc] !== -1) continue;
       dist[nr][nc] = dist[r][c] + 1;
@@ -196,10 +196,10 @@ function solveBFS(grid, source, goalList) {
 
     for (const [nr, nc] of neighbors4(r, c)) {
       if (grid[nr][nc] !== 0) continue;
-      const k = key(nr, nc);
-      if (visitedSet.has(k)) continue;
-      visitedSet.add(k);
-      parent.set(k, [r, c]);
+      const neighborKey = key(nr, nc);
+      if (visitedSet.has(neighborKey)) continue;
+      visitedSet.add(neighborKey);
+      parent.set(neighborKey, [r, c]);
       q.push([nr, nc]);
     }
   }
@@ -228,24 +228,24 @@ function solveAStar(grid, source, goalList) {
     open.sort((a, b) => a.f - b.f);
     const current = open.shift().node;
     const [r, c] = current;
-    const ck = key(r, c);
-    if (closed.has(ck)) continue;
-    closed.add(ck);
+    const currentKey = key(r, c);
+    if (closed.has(currentKey)) continue;
+    closed.add(currentKey);
     visitedOrder.push([r, c]);
 
-    if (goalSet.has(ck)) {
+    if (goalSet.has(currentKey)) {
       return { visitedOrder, path: reconstructPath(parent, [r, c]), exit: [r, c] };
     }
 
-    const currentG = gScore.get(ck);
+    const currentG = gScore.get(currentKey);
     for (const [nr, nc] of neighbors4(r, c)) {
       if (grid[nr][nc] !== 0) continue;
-      const nk = key(nr, nc);
-      if (closed.has(nk)) continue;
+      const neighborKey = key(nr, nc);
+      if (closed.has(neighborKey)) continue;
       const tentativeG = currentG + 1;
-      if (tentativeG >= (gScore.get(nk) ?? Infinity)) continue;
-      gScore.set(nk, tentativeG);
-      parent.set(nk, [r, c]);
+      if (tentativeG >= (gScore.get(neighborKey) ?? Infinity)) continue;
+      gScore.set(neighborKey, tentativeG);
+      parent.set(neighborKey, [r, c]);
       const h = minGoalHeuristic(nr, nc, goalList);
       open.push({ node: [nr, nc], f: tentativeG + h });
     }
