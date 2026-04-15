@@ -6,11 +6,11 @@ from typing import List, Tuple, Set
 import time
 
 # Constants
-ROWS = 31
-COLS = 51
-CELL_SIZE = 18
-EXIT_COUNT = 4
-START_POSITION = (1, 1)
+ROWS = 51
+COLS = 81
+CELL_SIZE = 14
+EXIT_COUNT = 6
+START_POSITION = (25, 40)  # Center of maze
 MAX_GENERATION_ATTEMPTS = 20
 VISITED_CELL_DELAY_MS = 5
 PATH_CELL_DELAY_MS = 15
@@ -21,7 +21,7 @@ LOOP_CARVE_RATE = 0.15
 MIN_START_BRANCHES = 3
 ENEMY_COUNT = 3
 ENEMY_MIN_DISTANCE = 8
-BRAID_RATE = 0.10
+BRAID_RATE = 0.30  # Increased to create more dead ends
 
 # Colors
 COLOR_WALL = "#0F172A"
@@ -140,45 +140,58 @@ class MazeSolver:
                             desired: int = EXIT_COUNT) -> List[Tuple[int, int]]:
         dist = self.bfs_distances(grid, source)
         candidates = []
-
-        for c in range(1, COLS - 1):
-            if grid[1][c] == 0:
-                candidates.append(((0, c), (1, c), dist[1][c] + 1 if dist[1][c] >= 0 else -1))
-            if grid[ROWS - 2][c] == 0:
-                candidates.append(((ROWS - 1, c), (ROWS - 2, c), dist[ROWS - 2][c] + 1 if dist[ROWS - 2][c] >= 0 else -1))
-
-        for r in range(1, ROWS - 1):
-            if grid[r][1] == 0:
-                candidates.append(((r, 0), (r, 1), dist[r][1] + 1 if dist[r][1] >= 0 else -1))
-            if grid[r][COLS - 2] == 0:
-                candidates.append(((r, COLS - 1), (r, COLS - 2), dist[r][COLS - 2] + 1 if dist[r][COLS - 2] >= 0 else -1))
-
-        candidates = [(e, i, d) for e, i, d in candidates if d > 0]
-        random.shuffle(candidates)
-
-        used_distances = set()
+        
+        # Find cells inside the maze at various distances from source
+        for r in range(5, ROWS - 5):  # Avoid edges
+            for c in range(5, COLS - 5):
+                if grid[r][c] == 0 and dist[r][c] > 0:  # Must be a path
+                    candidates.append(((r, c), dist[r][c]))
+        
+        # Sort by distance and select diverse positions
+        candidates.sort(key=lambda x: x[1], reverse=True)
+        
         selected = []
-
-        for exit_pos, inner_pos, distance in candidates:
+        used_positions = {source}  # Don't place exit at start
+        MIN_EXIT_DISTANCE = 15  # Minimum distance between exits
+        
+        for exit_pos, distance in candidates:
             if len(selected) >= desired:
                 break
-            if distance in used_distances:
-                continue
-            used_distances.add(distance)
-            selected.append(exit_pos)
-            grid[exit_pos[0]][exit_pos[1]] = 0
-
+            
+            # Check if this exit is far enough from all selected exits
+            is_far_enough = True
+            for selected_exit in selected:
+                manhattan_dist = abs(exit_pos[0] - selected_exit[0]) + abs(exit_pos[1] - selected_exit[1])
+                if manhattan_dist < MIN_EXIT_DISTANCE:
+                    is_far_enough = False
+                    break
+            
+            if is_far_enough and exit_pos not in used_positions:
+                selected.append(exit_pos)
+                used_positions.add(exit_pos)
+        
+        # If not enough exits, relax the distance requirement
         if len(selected) < desired:
-            used_exit = {exit_pos for exit_pos in selected}
-            for exit_pos, inner_pos, distance in candidates:
+            candidates.sort(key=lambda x: x[1], reverse=True)
+            MIN_EXIT_DISTANCE = 10  # Relax requirement
+            
+            for exit_pos, distance in candidates:
                 if len(selected) >= desired:
                     break
-                if exit_pos in used_exit:
+                if exit_pos in used_positions:
                     continue
-                selected.append(exit_pos)
-                used_exit.add(exit_pos)
-                grid[exit_pos[0]][exit_pos[1]] = 0
-
+                
+                is_far_enough = True
+                for selected_exit in selected:
+                    manhattan_dist = abs(exit_pos[0] - selected_exit[0]) + abs(exit_pos[1] - selected_exit[1])
+                    if manhattan_dist < MIN_EXIT_DISTANCE:
+                        is_far_enough = False
+                        break
+                
+                if is_far_enough:
+                    selected.append(exit_pos)
+                    used_positions.add(exit_pos)
+        
         return selected
 
     def carve_loops(self, grid: List[List[int]]):
@@ -265,6 +278,7 @@ class MazeSolver:
                 self.enemies = enemies
                 self.status_label.config(text="Đã tạo mê cung mới.")
                 self.stats_label.config(text="Bước đi: -, Đã duyệt: -, Thời gian: -, Lối ra: -")
+                self.draw_maze()
                 return
 
         grid = self.generate_maze_base()
@@ -280,6 +294,7 @@ class MazeSolver:
         self.enemies = enemies
         self.status_label.config(text="Đã tạo mê cung mới.")
         self.stats_label.config(text="Bước đi: -, Đã duyệt: -, Thời gian: -, Lối ra: -")
+        self.draw_maze()
 
     def solve_bfs(self, grid: List[List[int]], source: Tuple[int, int], 
                   goals: List[Tuple[int, int]]) -> Tuple[List[Tuple[int, int]], 
@@ -418,7 +433,8 @@ class MazeSolver:
         if not targets:
             self.status_label.config(text="Không có mục tiêu hợp lệ.")
             return
-
+        
+        self.draw_maze()
         self.status_label.config(text=f"Đang giải mê cung bằng {self.algorithm}...")
         self.is_animating = True
         self.root.update()
