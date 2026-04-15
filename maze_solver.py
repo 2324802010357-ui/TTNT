@@ -26,7 +26,9 @@ BRAID_RATE = 0.30  # Increased to create more dead ends
 # Colors
 COLOR_WALL = "#0F172A"
 COLOR_PATH = "#F8FAFC"
-COLOR_VISITED = "#22D3EE"
+COLOR_VISITED = "#22D3EE"  # Default visited
+COLOR_VISITED_BFS = "#22D3EE"  # BFS visited - Cyan
+COLOR_VISITED_ASTAR = "#84CC16"  # A* visited - Lime green
 COLOR_SOLUTION = "#F97316"
 COLOR_START = "#2563EB"
 COLOR_EXIT = "#22C55E"
@@ -39,17 +41,38 @@ class MazeSolver:
     def __init__(self):
         self.root = tk.Tk()
         self.root.title("Trình giải mê cung AI")
+        self.root.geometry("1200x900")  # Set initial window size
         
         self.width = COLS * CELL_SIZE
         self.height = ROWS * CELL_SIZE
         
+        # Main container with grid layout
+        self.root.grid_rowconfigure(0, weight=1)
+        self.root.grid_columnconfigure(0, weight=1)
+        
+        # Canvas frame - responsive
+        canvas_frame = tk.Frame(self.root, bg="black")
+        canvas_frame.grid(row=0, column=0, sticky="nsew")
+        canvas_frame.grid_rowconfigure(0, weight=1)
+        canvas_frame.grid_columnconfigure(0, weight=1)
+        canvas_frame.grid_propagate(True)  # Allow frame to expand
+        
         # Canvas
-        self.canvas = Canvas(self.root, width=self.width, height=self.height, bg="black")
-        self.canvas.pack()
+        self.canvas = Canvas(canvas_frame, bg="black", highlightthickness=0)
+        self.canvas.grid(row=0, column=0, sticky="nsew")
+        self.canvas.bind("<Configure>", self.on_canvas_configure)
+        
+        # Tính kích thước cell dựa trên window geometry
+        # Canvas sẽ có width = root width, height = root height - button - status - comparison
+        # Tạm thời sử dụng estimate, sẽ được update trong draw_maze()
+        self.current_cell_size = CELL_SIZE  # Default cell size, will be updated in draw_maze()
+        
+        self.original_width = self.width
+        self.original_height = self.height
         
         # Button frame
         button_frame = tk.Frame(self.root, bg="#222222")
-        button_frame.pack(fill=tk.X, padx=5, pady=5)
+        button_frame.grid(row=1, column=0, sticky="ew", padx=5, pady=5)
         
         self.gen_btn = tk.Button(button_frame, text="Tạo mê cung", command=self.generate_new_maze,
                                 bg=COLOR_BUTTON, fg=COLOR_TEXT)
@@ -66,13 +89,29 @@ class MazeSolver:
                                  bg=COLOR_BUTTON, fg=COLOR_TEXT)
         self.algo_btn.pack(side=tk.LEFT, padx=5)
         
+        self.compare_btn = tk.Button(button_frame, text="So sánh BFS vs A*", command=self.compare_algorithms,
+                                     bg="#16a34a", fg=COLOR_TEXT)
+        self.compare_btn.pack(side=tk.LEFT, padx=5)
+        
         # Status frame
-        self.status_label = tk.Label(self.root, text="Sẵn sàng.", bg="#1a1a1a", fg=COLOR_TEXT)
+        status_frame = tk.Frame(self.root, bg="#1a1a1a")
+        status_frame.grid(row=2, column=0, sticky="ew")
+        
+        self.status_label = tk.Label(status_frame, text="Sẵn sàng.", bg="#1a1a1a", fg=COLOR_TEXT, wraplength=800)
         self.status_label.pack(fill=tk.X, padx=5, pady=2)
         
-        self.stats_label = tk.Label(self.root, text="Bước đi: -, Đã duyệt: -, Thời gian: -, Lối ra: -",
-                                   bg="#1a1a1a", fg=COLOR_TEXT)
+        self.stats_label = tk.Label(status_frame, text="Bước đi: -, Đã duyệt: -, Thời gian: -, Lối ra: -",
+                                   bg="#1a1a1a", fg=COLOR_TEXT, wraplength=800)
         self.stats_label.pack(fill=tk.X, padx=5, pady=2)
+        
+        # Comparison frame
+        comparison_frame = tk.Frame(self.root, bg="#1a1a1a", height=60)
+        comparison_frame.grid(row=3, column=0, sticky="ew", padx=5, pady=5)
+        comparison_frame.grid_propagate(False)  # Don't shrink
+        
+        self.comparison_label = tk.Label(comparison_frame, text="Kết quả so sánh sẽ hiển thị ở đây...", font=("Arial", 10),
+                                        bg="#1a1a1a", fg="#FFD700", justify=tk.LEFT)
+        self.comparison_label.pack(fill=tk.BOTH, padx=5, pady=5, expand=True)
         
         self.maze = []
         self.start = list(START_POSITION)
@@ -80,9 +119,26 @@ class MazeSolver:
         self.enemies = []
         self.is_animating = False
         self.algorithm = "BFS"  # BFS or ASTAR
+        self.comparison_results = None
         
         self.generate_new_maze()
         self.draw_maze()
+        
+        # Force window update and trigger on_canvas_configure
+        self.root.update()
+        self.root.update_idletasks()
+    
+    def on_canvas_configure(self, event):
+        """Handle canvas resize - scale maze to fit"""
+        # Recalculate cell size based on actual event dimensions
+        if event.width > 100 and event.height > 100:
+            cell_width = event.width / COLS
+            cell_height = event.height / ROWS
+            self.current_cell_size = min(cell_width, cell_height)
+            
+            # Redraw maze với kích thước mới
+            if hasattr(self, 'maze') and len(self.maze) > 0:
+                self.draw_maze()
 
     def in_bounds(self, r: int, c: int) -> bool:
         return 0 <= r < ROWS and 0 <= c < COLS
@@ -376,50 +432,68 @@ class MazeSolver:
 
     def draw_maze(self, visited: Set[Tuple[int, int]] = None, 
                   path: Set[Tuple[int, int]] = None,
-                  goal: Tuple[int, int] = None):
+                  goal: Tuple[int, int] = None,
+                  astar_visited: Set[Tuple[int, int]] = None):
         if visited is None:
             visited = set()
         if path is None:
             path = set()
+        if astar_visited is None:
+            astar_visited = set()
+
+        # Get canvas dimensions using update_idletasks to ensure valid values
+        self.canvas.update_idletasks()
+        canvas_width = self.canvas.winfo_width()
+        canvas_height = self.canvas.winfo_height()
+        
+        if canvas_width > 100 and canvas_height > 100:
+            # Calculate cell size to fill available space
+            cell_width = canvas_width / COLS
+            cell_height = canvas_height / ROWS
+            
+            # Use min to keep aspect ratio square and fit in canvas
+            self.current_cell_size = min(cell_width, cell_height)
 
         self.canvas.delete("all")
 
         for r in range(ROWS):
             for c in range(COLS):
-                x, y = c * CELL_SIZE, r * CELL_SIZE
+                x, y = c * self.current_cell_size, r * self.current_cell_size
                 if self.maze[r][c] == 1:
                     color = COLOR_WALL
                 elif (r, c) in path:
                     color = COLOR_SOLUTION
+                elif (r, c) in astar_visited:
+                    color = COLOR_VISITED_ASTAR
                 elif (r, c) in visited:
-                    color = COLOR_VISITED
+                    color = COLOR_VISITED_BFS
                 else:
                     color = COLOR_PATH
                 
-                self.canvas.create_rectangle(x, y, x + CELL_SIZE, y + CELL_SIZE, fill=color, outline="")
+                self.canvas.create_rectangle(x, y, x + self.current_cell_size, y + self.current_cell_size, fill=color, outline="")
 
         # Draw exits
         for er, ec in self.exits:
-            x, y = ec * CELL_SIZE, er * CELL_SIZE
-            self.canvas.create_rectangle(x, y, x + CELL_SIZE, y + CELL_SIZE, fill=COLOR_EXIT, outline="")
+            x, y = ec * self.current_cell_size, er * self.current_cell_size
+            self.canvas.create_rectangle(x, y, x + self.current_cell_size, y + self.current_cell_size, fill=COLOR_EXIT, outline="")
 
         # Draw enemies
         for er, ec in self.enemies:
-            x, y = ec * CELL_SIZE, er * CELL_SIZE
-            self.canvas.create_rectangle(x, y, x + CELL_SIZE, y + CELL_SIZE, fill=COLOR_ENEMY, outline="")
+            x, y = ec * self.current_cell_size, er * self.current_cell_size
+            self.canvas.create_rectangle(x, y, x + self.current_cell_size, y + self.current_cell_size, fill=COLOR_ENEMY, outline="")
 
         # Draw start
         sr, sc = self.start
-        x, y = sc * CELL_SIZE, sr * CELL_SIZE
-        self.canvas.create_rectangle(x, y, x + CELL_SIZE, y + CELL_SIZE, fill=COLOR_START, outline="")
+        x, y = sc * self.current_cell_size, sr * self.current_cell_size
+        self.canvas.create_rectangle(x, y, x + self.current_cell_size, y + self.current_cell_size, fill=COLOR_START, outline="")
 
         # Draw goal
         if goal:
             gr, gc = goal
-            x, y = gc * CELL_SIZE, gr * CELL_SIZE
-            self.canvas.create_rectangle(x, y, x + CELL_SIZE, y + CELL_SIZE, fill=COLOR_GOAL, outline="")
+            x, y = gc * self.current_cell_size, gr * self.current_cell_size
+            self.canvas.create_rectangle(x, y, x + self.current_cell_size, y + self.current_cell_size, fill=COLOR_GOAL, outline="")
 
-        self.canvas.update()
+        self.root.update_idletasks()
 
     def toggle_algorithm(self):
         self.algorithm = "ASTAR" if self.algorithm == "BFS" else "BFS"
@@ -478,6 +552,108 @@ class MazeSolver:
         goal_type = "Lối ra" if is_exit else "Địch"
         self.status_label.config(text=f"Hoàn thành bằng {self.algorithm}.")
         self.stats_label.config(text=f"Bước đi: {step_count}, Đã duyệt: {len(visited_order)}, Thời gian: {elapsed:.2f} ms, {goal_type}: {exit_pos}")
+
+    def compare_algorithms(self):
+        """So sánh BFS và A* trên cùng một mê cung"""
+        if self.is_animating:
+            return
+
+        targets = self.exits + self.enemies
+        if not targets:
+            self.status_label.config(text="Không có mục tiêu hợp lệ.")
+            return
+        
+        self.draw_maze()
+        self.status_label.config(text="Đang so sánh BFS và A*...")
+        self.comparison_label.config(text="Dang tinh toan...")
+        self.is_animating = True
+        self.root.update()
+        
+        # Test BFS
+        start_time = time.time()
+        bfs_visited, bfs_path, bfs_exit = self.solve_bfs(self.maze, tuple(self.start), targets)
+        bfs_time = (time.time() - start_time) * 1000
+        bfs_steps = max(len(bfs_path) - 1, 0) if bfs_path else 0
+        
+        # Test A*
+        start_time = time.time()
+        astar_visited, astar_path, astar_exit = self.solve_astar(self.maze, tuple(self.start), targets)
+        astar_time = (time.time() - start_time) * 1000
+        astar_steps = max(len(astar_path) - 1, 0) if astar_path else 0
+        
+        # Tính toán hiệu suất
+        if len(bfs_visited) > 0:
+            astar_efficiency = (len(bfs_visited) - len(astar_visited)) / len(bfs_visited) * 100
+        else:
+            astar_efficiency = 0
+        
+        # Lưu kết quả
+        self.comparison_results = {
+            'bfs_steps': bfs_steps,
+            'bfs_visited': len(bfs_visited),
+            'bfs_time': bfs_time,
+            'bfs_path': bfs_path,
+            'astar_steps': astar_steps,
+            'astar_visited': len(astar_visited),
+            'astar_time': astar_time,
+            'astar_path': astar_path,
+            'efficiency': astar_efficiency
+        }
+        
+        # Hiển thị so sánh TRƯỚC animation
+        self.display_comparison()
+        self.status_label.config(text="Dang so sanh... Xem ket qua phia duoi")
+        self.root.update()
+        
+        # Animate BFS solution
+        bfs_visited_set = set()
+        for r, c in bfs_visited:
+            bfs_visited_set.add((r, c))
+            self.draw_maze(visited=bfs_visited_set, goal=bfs_exit)
+            self.root.after(1)
+            self.root.update_idletasks()
+        
+        # Pause giữa hai animation
+        self.root.after(200)
+        self.root.update_idletasks()
+        
+        # Animate A* solution
+        astar_visited_set = set()
+        for r, c in astar_visited:
+            astar_visited_set.add((r, c))
+            self.draw_maze(visited=bfs_visited_set, astar_visited=astar_visited_set, goal=astar_exit)
+            self.root.after(1)
+            self.root.update_idletasks()
+        
+        # Animate A* path
+        astar_path_set = set()
+        for r, c in astar_path:
+            astar_path_set.add((r, c))
+            self.draw_maze(visited=bfs_visited_set, astar_visited=astar_visited_set, path=astar_path_set, goal=astar_exit)
+            self.root.after(5)
+            self.root.update_idletasks()
+        
+        self.is_animating = False
+        self.status_label.config(text="Hoan thanh so sanh. Xem ket qua phia duoi.")
+
+    def display_comparison(self):
+        """Hiển thị kết quả so sánh BFS vs A*"""
+        if self.comparison_results is None:
+            text = "Khong co du lieu so sanh"
+            self.comparison_label.config(text=text, fg="#FF6B6B")
+            self.root.update_idletasks()
+            return
+        
+        r = self.comparison_results
+        # Create readable comparison text
+        comparison_text = (
+            f"BFS(Cyan):  {r['bfs_steps']} buoc | {r['bfs_visited']} o duyet | {r['bfs_time']:.2f}ms  |  "
+            f"A*(Lime):  {r['astar_steps']} buoc | {r['astar_visited']} o duyet | {r['astar_time']:.2f}ms  |  "
+            f"A* TIET KIEM {r['efficiency']:.1f}%"
+        )
+        
+        self.comparison_label.config(text=comparison_text, fg="#FFD700")
+        self.root.update_idletasks()
 
     def run(self):
         self.root.mainloop()
