@@ -25,6 +25,13 @@ const algorithmSelect = document.getElementById("algorithmSelect");
 const statusText = document.getElementById("statusText");
 const statsText = document.getElementById("statsText");
 
+const santaImage = new Image();
+let santaReady = false;
+santaImage.onload = () => {
+  santaReady = true;
+};
+santaImage.src = "../Picture/anh-ong-gia-noel.png";
+
 /** @type {number[][]} */
 let maze = [];
 /** @type {[number, number]} */
@@ -427,11 +434,17 @@ function drawCell(r, c, color) {
   ctx.fillRect(c * CELL_SIZE, r * CELL_SIZE, CELL_SIZE, CELL_SIZE);
 }
 
+function drawSantaAt(r, c) {
+  if (!santaReady) return;
+  ctx.drawImage(santaImage, c * CELL_SIZE, r * CELL_SIZE, CELL_SIZE, CELL_SIZE);
+}
+
 function drawMaze(overlays = {}) {
   const visited = overlays.visited || new Set();
   const path = overlays.path || new Set();
   const source = overlays.source || null;
   const goal = overlays.goal || null;
+  const santa = overlays.santa || null;
 
   for (let r = 0; r < ROWS; r += 1) {
     for (let c = 0; c < COLS; c += 1) {
@@ -461,6 +474,10 @@ function drawMaze(overlays = {}) {
   }
   if (goal) {
     drawCell(goal[0], goal[1], "#ef4444");
+  }
+
+  if (santa) {
+    drawSantaAt(santa[0], santa[1]);
   }
 
   ctx.strokeStyle = "#64748b";
@@ -495,8 +512,13 @@ async function animateResult(visitedOrder, pathNodes, exitNode) {
 
   for (const [r, c] of pathNodes) {
     pathSet.add(key(r, c));
-    drawMaze({ visited: visitedSet, path: pathSet, source: start, goal: exitNode });
+    drawMaze({ visited: visitedSet, path: pathSet, source: start, goal: exitNode, santa: [r, c] });
     await new Promise((resolve) => setTimeout(resolve, PATH_CELL_DELAY_MS));
+  }
+
+  if (pathNodes.length > 0) {
+    const [sr, sc] = pathNodes[pathNodes.length - 1];
+    drawMaze({ visited: visitedSet, path: pathSet, source: start, goal: exitNode, santa: [sr, sc] });
   }
 
   isAnimating = false;
