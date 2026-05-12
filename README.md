@@ -2,7 +2,7 @@
 
 Ứng dụng web nhỏ mô phỏng đồ án trí tuệ nhân tạo:
 - Tạo **solid braided maze** — mê cung hoàn toàn liền khối với hành lang dày đặc liên kết
-- Có nhiều lối ra với độ dài đường đi khác nhau + thêm các điểm địch bên trong
+- Có nhiều lối ra với độ dài đường đi khác nhau
 - AI tìm đường ngắn nhất đến mục tiêu gần nhất (BFS hoặc A*)
 - Hiển thị animation quá trình duyệt và đường đi kết quả
 
@@ -30,15 +30,10 @@
 - Cố gắng đảm bảo các lối ra có khoảng cách khác nhau từ điểm bắt đầu
 - **Màu xanh lục** trên canvas
 
-### Enemies (Điểm địch)
-- Đặt các điểm địch bên trong mê cung ở vị trí xa từ start (>= `ENEMY_MIN_DISTANCE`)
-- Ưu tiên các vị trí ở các vùng sâu
-- **Màu tím** trên canvas
-
 ### Giải mê cung
 - **BFS**: Tìm kiếm rộng trước, đảm bảo đường ngắn nhất (số bước ít nhất)
 - **A***: Tìm kiếm có thông tin với heuristic Manhattan distance, thường nhanh hơn BFS
-- Cả hai đều tìm đến **mục tiêu gần nhất** từ tập {exits + enemies}
+- Cả hai đều tìm đến **mục tiêu gần nhất** từ tập {exits}
 - Hiển thị:
   - ô đã duyệt (xanh da trời) — rất nhiều ô trong maze liền khối do có nhiều đường xoắn
   - đường đi ngắn nhất (cam)
@@ -59,8 +54,6 @@ const ROOM_COUNT = 0;         // Không dùng rooms
 const LOOP_CARVE_RATE = 0.90; // 90% chu trình - hành lang liền khối
 const BRAID_RATE = 0.98;      // 98% dead ends kết nối - gần như không có ngõ cụt
 const MIN_START_BRANCHES = 4; // 4 lựa chọn từ start
-const ENEMY_COUNT = 3;         // Số điểm địch
-const ENEMY_MIN_DISTANCE = 8;  // Khoảng cách tối thiểu từ start cho enemy
 const EXIT_COUNT = 4;          // Số lối ra
 ```
 

@@ -13,8 +13,6 @@ const ROOM_MIN_SIZE = 5;
 const ROOM_MAX_SIZE = 12;
 const LOOP_CARVE_RATE = 0.15;
 const MIN_START_BRANCHES = 3;
-const ENEMY_COUNT = 3;
-const ENEMY_MIN_DISTANCE = 8;
 const BRAID_RATE = 0.10;
 
 const canvas = document.getElementById("mazeCanvas");
@@ -32,14 +30,19 @@ santaImage.onload = () => {
 };
 santaImage.src = "../Picture/anh-ong-gia-noel.png";
 
+const chimneyImage = new Image();
+let chimneyReady = false;
+chimneyImage.onload = () => {
+  chimneyReady = true;
+};
+chimneyImage.src = "../Picture/pngtree-red-chimney-cartoon-chimney-snow-falling-chimney-hand-drawn-chimney-png-image_3865345.jpg";
+
 /** @type {number[][]} */
 let maze = [];
 /** @type {[number, number]} */
 let start = [...START_POSITION];
 /** @type {Array<[number, number]>} */
 let exits = [];
-/** @type {Array<[number, number]>} */
-let enemies = [];
 let isAnimating = false;
 
 function inBounds(r, c) {
@@ -149,36 +152,6 @@ function ensureStartBranches(grid, source) {
   }
 }
 
-function placeEnemies(grid, source, existingExits) {
-  const dist = bfsDistances(grid, source);
-  const usedKeys = new Set();
-  
-  for (const [r, c] of [source, ...existingExits]) {
-    usedKeys.add(key(r, c));
-  }
-  
-  const candidates = [];
-  for (let r = 1; r < ROWS - 1; r += 1) {
-    for (let c = 1; c < COLS - 1; c += 1) {
-      const k = key(r, c);
-      if (usedKeys.has(k) || grid[r][c] !== 0) continue;
-      const d = dist[r][c];
-      if (d >= ENEMY_MIN_DISTANCE) {
-        candidates.push({ pos: [r, c], dist: d });
-      }
-    }
-  }
-  
-  candidates.sort((a, b) => b.dist - a.dist);
-  const selected = [];
-  for (const c of candidates) {
-    if (selected.length >= ENEMY_COUNT) break;
-    selected.push(c.pos);
-    usedKeys.add(key(c.pos[0], c.pos[1]));
-  }
-  
-  return selected;
-}
 
 function braidMaze(grid) {
   const deadEnds = [];
@@ -326,9 +299,8 @@ function generateMazeWithExits() {
     const source = [...START_POSITION];
     const generatedExits = placeDistinctExits(grid, source, EXIT_COUNT);
     ensureStartBranches(grid, source);
-    const generatedEnemies = placeEnemies(grid, source, generatedExits);
     if (generatedExits.length >= 2) {
-      return { grid, source, generatedExits, generatedEnemies };
+      return { grid, source, generatedExits };
     }
   }
 
@@ -338,8 +310,7 @@ function generateMazeWithExits() {
   braidMaze(fallbackGrid);
   const fallbackExits = placeDistinctExits(fallbackGrid, [...START_POSITION], 2);
   ensureStartBranches(fallbackGrid, [...START_POSITION]);
-  const fallbackEnemies = placeEnemies(fallbackGrid, [...START_POSITION], fallbackExits);
-  return { grid: fallbackGrid, source: [...START_POSITION], generatedExits: fallbackExits, generatedEnemies: fallbackEnemies };
+  return { grid: fallbackGrid, source: [...START_POSITION], generatedExits: fallbackExits };
 }
 
 function reconstructPath(parent, end) {
@@ -439,6 +410,12 @@ function drawSantaAt(r, c) {
   ctx.drawImage(santaImage, c * CELL_SIZE, r * CELL_SIZE, CELL_SIZE, CELL_SIZE);
 }
 
+function drawChimneyAt(r, c) {
+  if (!chimneyReady) return false;
+  ctx.drawImage(chimneyImage, c * CELL_SIZE, r * CELL_SIZE, CELL_SIZE, CELL_SIZE);
+  return true;
+}
+
 function drawMaze(overlays = {}) {
   const visited = overlays.visited || new Set();
   const path = overlays.path || new Set();
@@ -462,12 +439,11 @@ function drawMaze(overlays = {}) {
   }
 
   for (const [er, ec] of exits) {
-    drawCell(er, ec, "#22c55e");
+    if (!drawChimneyAt(er, ec)) {
+      drawCell(er, ec, "#22c55e");
+    }
   }
 
-  for (const [er, ec] of enemies) {
-    drawCell(er, ec, "#a855f7");
-  }
 
   if (source) {
     drawCell(source[0], source[1], "#2563eb");
@@ -527,11 +503,10 @@ async function animateResult(visitedOrder, pathNodes, exitNode) {
 }
 
 function resetMaze() {
-  const { grid, source, generatedExits, generatedEnemies } = generateMazeWithExits();
+  const { grid, source, generatedExits } = generateMazeWithExits();
   maze = grid;
   start = source;
   exits = generatedExits;
-  enemies = generatedEnemies;
   statusText.textContent = "Đã tạo mê cung mới.";
   statsText.textContent = "Bước đi: -, Đã duyệt: -, Thời gian: -, Lối ra: -";
   drawMaze({ source: start });
@@ -540,7 +515,7 @@ function resetMaze() {
 async function solveMaze() {
   if (isAnimating) return;
   
-  const targets = [...exits, ...enemies];
+  const targets = [...exits];
   if (!targets.length) {
     statusText.textContent = "Không có mục tiêu hợp lệ.";
     return;
@@ -563,8 +538,7 @@ async function solveMaze() {
   await animateResult(result.visitedOrder, result.path, result.exit);
 
   const stepCount = Math.max(result.path.length - 1, 0);
-  const isExit = exits.some(([r, c]) => r === result.exit[0] && c === result.exit[1]);
-  const goalType = isExit ? "Lối ra" : "Địch";
+  const goalType = "Lối ra";
   statusText.textContent = `Hoàn thành bằng ${algorithm.toUpperCase()}.`;
   statsText.textContent = `Bước đi: ${stepCount}, Đã duyệt: ${result.visitedOrder.length}, Thời gian: ${elapsed} ms, ${goalType}: (${result.exit[0]}, ${result.exit[1]})`;
 }

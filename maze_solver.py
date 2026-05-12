@@ -29,8 +29,6 @@ ANIMATION_FRAME_SKIP = 6
 ROOM_COUNT = 0
 LOOP_CARVE_RATE = 0.15
 MIN_START_BRANCHES = 3
-ENEMY_COUNT = 3
-ENEMY_MIN_DISTANCE = 8
 BRAID_RATE = 0.30  # Increased to create more dead ends
 
 # Colors
@@ -42,13 +40,13 @@ COLOR_VISITED_ASTAR = "#84CC16"  # A* visited - Lime green
 COLOR_SOLUTION = "#F97316"
 COLOR_START = "#2563EB"
 COLOR_EXIT = "#22C55E"
-COLOR_ENEMY = "#A855F7"
 COLOR_GOAL = "#EF4444"
 COLOR_WAYPOINT = "#EC4899"  # Hot pink cho điểm mốc
 COLOR_BUTTON = "#333333"
 COLOR_TEXT = "#FFFFFF"
 
 SANTA_SCALE = 10.0
+CHIMNEY_SCALE = 3.0
 
 class MazeSolver:
     def __init__(self):
@@ -90,6 +88,15 @@ class MazeSolver:
         self.santa_last_size = None
         self.last_santa = None
         self.santa_load_error = None
+
+        self.chimney_image_path = os.path.join(
+            os.path.dirname(__file__), "..", "Picture",
+            "pngtree-red-chimney-cartoon-chimney-snow-falling-chimney-hand-drawn-chimney-png-image_3865345.jpg",
+        )
+        self.chimney_base_image = None
+        self.chimney_tk_image = None
+        self.chimney_last_size = None
+        self.chimney_load_error = None
 
         # Run history panel on the right side
         history_frame = tk.Frame(top_frame, bg="#0b1020", width=280)
@@ -202,7 +209,6 @@ class MazeSolver:
         self.maze = []
         self.start = list(START_POSITION)
         self.exits = []
-        self.enemies = []
         self.waypoints = []  # Điểm mốc phân tán trong mê cung
         self.waypoint_mode = False  # Bật/tắt chế độ điểm mốc
         self.waypoint_all_mode = False
@@ -216,6 +222,7 @@ class MazeSolver:
         self.last_goal: Tuple[int, int] | None = None
 
         self.load_santa_image()
+        self.load_chimney_image()
         
         self.generate_new_maze()
         self.draw_maze()
@@ -238,6 +245,7 @@ class MazeSolver:
             # Redraw maze với kích thước mới
             if hasattr(self, 'maze') and len(self.maze) > 0:
                 self.update_santa_image()
+                self.update_chimney_image()
                 self.draw_maze(
                     visited=self.last_visited,
                     path=self.last_path,
@@ -267,6 +275,27 @@ class MazeSolver:
                 self.santa_base_image = None
                 self.santa_load_error = f"Loi PhotoImage: {exc}"
 
+    def load_chimney_image(self):
+        if not os.path.exists(self.chimney_image_path):
+            self.chimney_base_image = None
+            self.chimney_load_error = f"Khong tim thay anh: {self.chimney_image_path}"
+            return
+
+        if PIL_AVAILABLE:
+            try:
+                self.chimney_base_image = Image.open(self.chimney_image_path).convert("RGBA")
+                self.chimney_load_error = None
+            except Exception as exc:
+                self.chimney_base_image = None
+                self.chimney_load_error = f"Loi Pillow: {exc}"
+        else:
+            try:
+                self.chimney_base_image = tk.PhotoImage(file=self.chimney_image_path)
+                self.chimney_load_error = None
+            except Exception as exc:
+                self.chimney_base_image = None
+                self.chimney_load_error = f"Loi PhotoImage: {exc}"
+
     def update_santa_image(self):
         if not self.santa_base_image:
             return
@@ -294,6 +323,33 @@ class MazeSolver:
 
         self.santa_last_size = target_size
 
+    def update_chimney_image(self):
+        if not self.chimney_base_image:
+            return
+        target_size = max(1, int(round(self.current_cell_size * CHIMNEY_SCALE)))
+        if self.chimney_last_size == target_size and self.chimney_tk_image is not None:
+            return
+
+        if PIL_AVAILABLE and isinstance(self.chimney_base_image, Image.Image):
+            resized = self.chimney_base_image.resize((target_size, target_size), Image.LANCZOS)
+            self.chimney_tk_image = ImageTk.PhotoImage(resized)
+        else:
+            base = self.chimney_base_image
+            width = base.width()
+            height = base.height()
+            if width <= 0 or height <= 0:
+                return
+
+            scale = min(width / target_size, height / target_size)
+            if scale >= 1:
+                factor = max(1, int(round(scale)))
+                self.chimney_tk_image = base.subsample(factor, factor)
+            else:
+                factor = max(1, int(round(1 / scale)))
+                self.chimney_tk_image = base.zoom(factor, factor)
+
+        self.chimney_last_size = target_size
+
     def draw_santa_at(self, r: int, c: int):
         x, y = c * self.current_cell_size, r * self.current_cell_size
         size = self.current_cell_size * SANTA_SCALE
@@ -312,6 +368,17 @@ class MazeSolver:
             fill="#ffffff",
             font=("Arial", int(max(8, size / 2)), "bold"),
         )
+
+    def draw_chimney_at(self, r: int, c: int) -> bool:
+        x, y = c * self.current_cell_size, r * self.current_cell_size
+        size = self.current_cell_size * CHIMNEY_SCALE
+        offset = (size - self.current_cell_size) / 2
+        draw_x = x - offset
+        draw_y = y - offset
+        if self.chimney_tk_image:
+            self.canvas.create_image(draw_x, draw_y, image=self.chimney_tk_image, anchor="nw")
+            return True
+        return False
 
     def ui_pump(self, delay_ms: int = 0):
         if delay_ms > 0:
@@ -524,30 +591,6 @@ class MazeSolver:
                 wr, wc = random.choice(wall_neighbors)
                 grid[wr][wc] = 0
 
-    def place_enemies(self, grid: List[List[int]], source: Tuple[int, int], 
-                     existing_exits: List[Tuple[int, int]]) -> List[Tuple[int, int]]:
-        dist = self.bfs_distances(grid, source)
-        used_keys = {source, *existing_exits}
-        
-        candidates = []
-        for r in range(1, ROWS - 1):
-            for c in range(1, COLS - 1):
-                if (r, c) in used_keys or grid[r][c] != 0:
-                    continue
-                d = dist[r][c]
-                if d >= ENEMY_MIN_DISTANCE:
-                    candidates.append(((r, c), d))
-        
-        candidates.sort(key=lambda x: x[1], reverse=True)
-        selected = []
-        for pos, _ in candidates:
-            if len(selected) >= ENEMY_COUNT:
-                break
-            selected.append(pos)
-            used_keys.add(pos)
-        
-        return selected
-
     def pick_random_start(self, grid: List[List[int]], blocked: Set[Tuple[int, int]] | None = None) -> Tuple[int, int] | None:
         if blocked is None:
             blocked = set()
@@ -570,7 +613,7 @@ class MazeSolver:
             self.status_label.config(text="Chưa có mê cung để random điểm bắt đầu.")
             return
 
-        blocked = set(self.exits) | set(self.enemies) | set(self.waypoints)
+        blocked = set(self.exits) | set(self.waypoints)
         new_start = self.pick_random_start(self.maze, blocked)
         if new_start is None:
             self.status_label.config(text="Không tìm được vị trí bắt đầu hợp lệ.")
@@ -588,8 +631,7 @@ class MazeSolver:
             self.status_label.config(text="Chưa có mê cung để random điểm mốc.")
             return
 
-        blocked = list(self.enemies)
-        new_waypoints = self.generate_waypoints(self.maze, tuple(self.start), self.exits, blocked)
+        new_waypoints = self.generate_waypoints(self.maze, tuple(self.start), self.exits)
         if not new_waypoints:
             self.status_label.config(text="Không tìm được vị trí điểm mốc hợp lệ.")
             return
@@ -611,14 +653,12 @@ class MazeSolver:
             if source is None:
                 continue
             exits = self.place_distinct_exits(grid, source, EXIT_COUNT)
-            enemies = self.place_enemies(grid, source, exits)
-            waypoints = self.generate_waypoints(grid, source, exits, enemies)
+            waypoints = self.generate_waypoints(grid, source, exits)
             
             if len(exits) >= 2:
                 self.maze = grid
                 self.start = list(source)
                 self.exits = exits
-                self.enemies = enemies
                 self.waypoints = waypoints
                 self.status_label.config(text="Đã tạo mê cung mới.")
                 self.stats_label.config(text="Bước đi: -, Đã duyệt: -, Thời gian: -, Lối ra: -")
@@ -632,13 +672,11 @@ class MazeSolver:
         if source is None:
             source = tuple(START_POSITION)
         exits = self.place_distinct_exits(grid, source, 2)
-        enemies = self.place_enemies(grid, source, exits)
-        waypoints = self.generate_waypoints(grid, source, exits, enemies)
+        waypoints = self.generate_waypoints(grid, source, exits)
         
         self.maze = grid
         self.start = list(source)
         self.exits = exits
-        self.enemies = enemies
         self.waypoints = waypoints
         self.status_label.config(text="Đã tạo mê cung mới.")
         self.stats_label.config(text="Bước đi: -, Đã duyệt: -, Thời gian: -, Lối ra: -")
@@ -755,6 +793,7 @@ class MazeSolver:
             self.current_cell_size = min(cell_width, cell_height)
 
         self.update_santa_image()
+        self.update_chimney_image()
 
         self.canvas.delete("all")
 
@@ -779,16 +818,12 @@ class MazeSolver:
             x, y = ec * self.current_cell_size, er * self.current_cell_size
             self.canvas.create_rectangle(x, y, x + self.current_cell_size, y + self.current_cell_size, fill=COLOR_EXIT, outline="")
 
-        # Draw enemies
-        for er, ec in self.enemies:
-            x, y = ec * self.current_cell_size, er * self.current_cell_size
-            self.canvas.create_rectangle(x, y, x + self.current_cell_size, y + self.current_cell_size, fill=COLOR_ENEMY, outline="")
-
         # Draw waypoints if mode enabled
         if self.waypoint_mode:
             for wr, wc in self.waypoints:
-                x, y = wc * self.current_cell_size, wr * self.current_cell_size
-                self.canvas.create_rectangle(x, y, x + self.current_cell_size, y + self.current_cell_size, fill=COLOR_WAYPOINT, outline="")
+                if not self.draw_chimney_at(wr, wc):
+                    x, y = wc * self.current_cell_size, wr * self.current_cell_size
+                    self.canvas.create_rectangle(x, y, x + self.current_cell_size, y + self.current_cell_size, fill=COLOR_WAYPOINT, outline="")
 
         # Draw start
         sr, sc = self.start
@@ -913,7 +948,7 @@ class MazeSolver:
             self.is_animating = True
             self.ui_pump()
 
-            targets = self.exits + self.enemies
+            targets = self.exits
 
             candidate_results = []
             for waypoint in self.waypoints:
@@ -1021,7 +1056,7 @@ class MazeSolver:
             return
         
         # Chế độ bình thường
-        targets = self.exits + self.enemies
+        targets = self.exits
         if not targets:
             self.status_label.config(text="Không có mục tiêu hợp lệ.")
             return
@@ -1079,7 +1114,7 @@ class MazeSolver:
 
         step_count = max(len(path) - 1, 0)
         is_exit = exit_pos in self.exits
-        goal_type = "Lối ra" if is_exit else "Địch"
+        goal_type = "Lối ra"
         self.status_label.config(text=f"Hoàn thành bằng {self.algorithm}.")
         self.stats_label.config(text=f"Bước đi: {step_count}, Đã duyệt: {len(visited_order)}, Thời gian: {elapsed:.2f} ms, {goal_type}: {exit_pos}")
         self.append_run_history(
@@ -1097,7 +1132,7 @@ class MazeSolver:
         if self.is_animating:
             return
 
-        targets = self.exits + self.enemies
+        targets = self.exits
         if not targets:
             self.status_label.config(text="Không có mục tiêu hợp lệ.")
             return
@@ -1110,8 +1145,25 @@ class MazeSolver:
 
         compare_detail = None
         if self.waypoint_mode and self.waypoints:
-            bfs_result = self.solve_route_through_waypoints("BFS", self.waypoints, targets)
-            astar_result = self.solve_route_through_waypoints("ASTAR", self.waypoints, targets)
+            if self.waypoint_all_mode:
+                bfs_result = self.solve_route_all_waypoints("BFS", self.waypoints, targets)
+                astar_result = self.solve_route_all_waypoints("ASTAR", self.waypoints, targets)
+                if bfs_result:
+                    bfs_result = {
+                        **bfs_result,
+                        "waypoint": None,
+                        "scan_visited": bfs_result.get("visited_order", []),
+                    }
+                if astar_result:
+                    astar_result = {
+                        **astar_result,
+                        "waypoint": None,
+                        "scan_visited": astar_result.get("visited_order", []),
+                    }
+                compare_detail = "Che do qua tat ca diem moc"
+            else:
+                bfs_result = self.solve_route_through_waypoints("BFS", self.waypoints, targets)
+                astar_result = self.solve_route_through_waypoints("ASTAR", self.waypoints, targets)
 
             if bfs_result:
                 bfs_visited = bfs_result["visited_order"]
@@ -1147,17 +1199,24 @@ class MazeSolver:
                 astar_waypoint = None
                 astar_saved = None
 
-            bfs_saved_text = f"{bfs_saved} bước" if bfs_saved is not None else "không có mốc so sánh"
-            astar_saved_text = f"{astar_saved} bước" if astar_saved is not None else "không có mốc so sánh"
-            compare_detail = (
-                f"BFS duyệt {len(self.waypoints)} waypoint, chọn WP={bfs_waypoint}, tiết kiệm={bfs_saved_text} | "
-                f"A* duyệt {len(self.waypoints)} waypoint, chọn WP={astar_waypoint}, tiết kiệm={astar_saved_text}"
-            )
-            self.status_label.config(text="Đang duyệt 1 lần qua toàn bộ waypoint cho BFS/A* trước khi chọn mốc tối ưu...")
-            if bfs_result:
-                self.animate_waypoint_scan(bfs_result.get("scan_visited", []), "BFS")
-            if astar_result:
-                self.animate_waypoint_scan(astar_result.get("scan_visited", []), "ASTAR")
+            if not self.waypoint_all_mode:
+                bfs_saved_text = f"{bfs_saved} buoc" if bfs_saved is not None else "khong co moc so sanh"
+                astar_saved_text = f"{astar_saved} buoc" if astar_saved is not None else "khong co moc so sanh"
+                compare_detail = (
+                    f"BFS duyet {len(self.waypoints)} waypoint, chon WP={bfs_waypoint}, tiet kiem={bfs_saved_text} | "
+                    f"A* duyet {len(self.waypoints)} waypoint, chon WP={astar_waypoint}, tiet kiem={astar_saved_text}"
+                )
+                self.status_label.config(text="Dang danh gia waypoint cho BFS/A* truoc khi chon moc toi uu...")
+                if bfs_result:
+                    self.animate_waypoint_scan(bfs_result.get("scan_visited", []), "BFS")
+                if astar_result:
+                    self.animate_waypoint_scan(astar_result.get("scan_visited", []), "ASTAR")
+            else:
+                self.status_label.config(text="Dang so sanh che do tat ca diem moc...")
+                if bfs_result:
+                    self.animate_waypoint_scan(bfs_result.get("scan_visited", []), "BFS")
+                if astar_result:
+                    self.animate_waypoint_scan(astar_result.get("scan_visited", []), "ASTAR")
         else:
             start_time = time.time()
             bfs_visited, bfs_path, bfs_exit = self.solve_bfs(self.maze, tuple(self.start), targets)
@@ -1210,8 +1269,12 @@ class MazeSolver:
             for idx, (r, c) in enumerate(bfs_path):
                 bfs_path_set.add((r, c))
                 if self.should_render_frame(idx, len(bfs_path)):
-                    self.draw_maze(visited=bfs_visited_set, path=bfs_path_set, goal=bfs_exit)
+                    self.draw_maze(visited=bfs_visited_set, path=bfs_path_set, goal=bfs_exit, santa=(r, c))
                     self.ui_pump(3)
+
+            if bfs_path:
+                sr, sc = bfs_path[-1]
+                self.draw_maze(visited=bfs_visited_set, path=bfs_path_set, goal=bfs_exit, santa=(sr, sc))
 
             self.ui_pump(200)
 
@@ -1220,8 +1283,12 @@ class MazeSolver:
             for idx, (r, c) in enumerate(astar_path):
                 astar_path_set.add((r, c))
                 if self.should_render_frame(idx, len(astar_path)):
-                    self.draw_maze(astar_visited=astar_visited_set, path=astar_path_set, goal=astar_exit)
+                    self.draw_maze(astar_visited=astar_visited_set, path=astar_path_set, goal=astar_exit, santa=(r, c))
                     self.ui_pump(3)
+
+            if astar_path:
+                sr, sc = astar_path[-1]
+                self.draw_maze(astar_visited=astar_visited_set, path=astar_path_set, goal=astar_exit, santa=(sr, sc))
         else:
             bfs_visited_set = set()
             for idx, (r, c) in enumerate(bfs_visited):
@@ -1229,6 +1296,17 @@ class MazeSolver:
                 if self.should_render_frame(idx, len(bfs_visited)):
                     self.draw_maze(visited=bfs_visited_set, goal=bfs_exit)
                     self.ui_pump(1)
+
+            bfs_path_set = set()
+            for idx, (r, c) in enumerate(bfs_path):
+                bfs_path_set.add((r, c))
+                if self.should_render_frame(idx, len(bfs_path)):
+                    self.draw_maze(visited=bfs_visited_set, path=bfs_path_set, goal=bfs_exit, santa=(r, c))
+                    self.ui_pump(3)
+
+            if bfs_path:
+                sr, sc = bfs_path[-1]
+                self.draw_maze(visited=bfs_visited_set, path=bfs_path_set, goal=bfs_exit, santa=(sr, sc))
 
             self.ui_pump(200)
 
@@ -1243,8 +1321,24 @@ class MazeSolver:
             for idx, (r, c) in enumerate(astar_path):
                 astar_path_set.add((r, c))
                 if self.should_render_frame(idx, len(astar_path)):
-                    self.draw_maze(visited=bfs_visited_set, astar_visited=astar_visited_set, path=astar_path_set, goal=astar_exit)
+                    self.draw_maze(
+                        visited=bfs_visited_set,
+                        astar_visited=astar_visited_set,
+                        path=astar_path_set,
+                        goal=astar_exit,
+                        santa=(r, c),
+                    )
                     self.ui_pump(5)
+
+            if astar_path:
+                sr, sc = astar_path[-1]
+                self.draw_maze(
+                    visited=bfs_visited_set,
+                    astar_visited=astar_visited_set,
+                    path=astar_path_set,
+                    goal=astar_exit,
+                    santa=(sr, sc),
+                )
 
         self.is_animating = False
         self.status_label.config(text="Hoan thanh so sanh. Xem ket qua phia duoi.")
@@ -1271,7 +1365,7 @@ class MazeSolver:
     def generate_waypoints(self, grid: List[List[int]], source: Tuple[int, int], 
                           exits: List[Tuple[int, int]],
                           blocked: List[Tuple[int, int]] | None = None) -> List[Tuple[int, int]]:
-        """Sinh ra 4 điểm mốc ngẫu nhiên, không trùng start/exit/enemy"""
+        """Sinh ra 4 điểm mốc ngẫu nhiên, không trùng start/exit"""
         used_positions = {source}
         used_positions.update(exits)
         if blocked:
@@ -1422,29 +1516,29 @@ class MazeSolver:
             return None
 
         start_time = time.time()
-        scan_visited, dist_start, parent_start = self.bfs_scan_from_source(tuple(self.start), waypoints)
-        dist_to_target, parent_to_target = self.bfs_scan_from_targets(targets)
-
+        scan_visited, _, _ = self.bfs_scan_from_source(tuple(self.start), waypoints)
         candidates = []
+
         for waypoint in waypoints:
-            wr, wc = waypoint
-            if dist_start[wr][wc] == -1 or dist_to_target[wr][wc] == -1:
+            visited_1, path_1, reached_wp = self.solve_segment(algorithm, tuple(self.start), [waypoint])
+            if not path_1 or not reached_wp:
                 continue
 
-            path_1 = self.reconstruct_path_from_parent(parent_start, tuple(self.start), waypoint)
-            path_2 = self.reconstruct_path_to_target(parent_to_target, waypoint)
-            if not path_1 or not path_2:
+            visited_2, path_2, exit_pos = self.solve_segment(algorithm, waypoint, targets)
+            if not path_2 or not exit_pos:
                 continue
 
             full_path = path_1 + path_2[1:]
+            visited_order = list(dict.fromkeys(visited_1 + visited_2))
             candidates.append({
                 "waypoint": waypoint,
                 "order": (waypoint,),
-                "visited_order": scan_visited,
+                "visited_order": visited_order,
                 "full_path": full_path,
-                "target": path_2[-1],
+                "target": exit_pos,
                 "total_steps": max(len(full_path) - 1, 0),
                 "total_time": 0.0,
+                "scan_visited": scan_visited,
             })
 
         if not candidates:
@@ -1460,7 +1554,6 @@ class MazeSolver:
         best["saved_steps"] = (second_best_steps - best["total_steps"]) if second_best_steps is not None else None
         best["evaluated_count"] = len(candidates)
         best["total_waypoints"] = len(waypoints)
-        best["scan_visited"] = scan_visited
         return best
 
     def solve_route_all_waypoints(self, algorithm: str, waypoints: List[Tuple[int, int]],
@@ -1559,7 +1652,7 @@ class MazeSolver:
                 if cell in waypoint_set:
                     seen_waypoints.add(cell)
                 self.status_label.config(
-                    text=f"{algorithm}: duyệt 1 lần qua bản đồ, đã đi qua {len(seen_waypoints)}/{total_waypoints} waypoint..."
+                    text=f"{algorithm}: dang danh gia waypoint, da di qua {len(seen_waypoints)}/{total_waypoints} waypoint..."
                 )
                 if self.should_render_frame(idx, len(scan_visited)):
                     self.draw_maze(astar_visited=astar_visited_set)
@@ -1571,7 +1664,7 @@ class MazeSolver:
                 if cell in waypoint_set:
                     seen_waypoints.add(cell)
                 self.status_label.config(
-                    text=f"{algorithm}: duyệt 1 lần qua bản đồ, đã đi qua {len(seen_waypoints)}/{total_waypoints} waypoint..."
+                    text=f"{algorithm}: dang danh gia waypoint, da di qua {len(seen_waypoints)}/{total_waypoints} waypoint..."
                 )
                 if self.should_render_frame(idx, len(scan_visited)):
                     self.draw_maze(visited=visited_set)
@@ -1667,6 +1760,7 @@ class MazeSolver:
             self.is_animating = True
             self.ui_pump()
 
+            targets = self.exits
             best_result = self.solve_route_through_waypoints(self.algorithm, self.waypoints, targets)
             if not best_result:
                 self.status_label.config(text="Không tìm thấy đường đi qua bất kỳ điểm mốc nào.")
@@ -1739,7 +1833,7 @@ class MazeSolver:
             )
             return
 
-        targets = self.exits + self.enemies
+        targets = self.exits
         if not targets:
             self.status_label.config(text="Không có mục tiêu hợp lệ.")
             return
@@ -1790,8 +1884,7 @@ class MazeSolver:
 
         self.is_animating = False
         step_count = max(len(path) - 1, 0)
-        is_exit = exit_pos in self.exits
-        goal_type = "Lối ra" if is_exit else "Địch"
+        goal_type = "Lối ra"
         self.status_label.config(text=f"Hoàn thành bằng {self.algorithm}.")
         self.stats_label.config(text=f"Bước đi: {step_count}, Đã duyệt: {len(visited_order)}, Thời gian: {elapsed:.2f} ms, {goal_type}: {exit_pos}")
         self.append_run_history(
