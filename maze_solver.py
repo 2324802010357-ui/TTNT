@@ -35,7 +35,7 @@ BRAID_RATE = 0.30  # Increased to create more dead ends
 COLOR_WALL = "#0F172A"
 COLOR_PATH = "#F8FAFC"
 COLOR_VISITED = "#22D3EE"  # Default visited
-COLOR_VISITED_BFS = "#22D3EE"  # BFS visited - Cyan
+COLOR_VISITED_BFS = "#22D3EE"  # GBFS visited - Cyan
 COLOR_VISITED_ASTAR = "#84CC16"  # A* visited - Lime green
 COLOR_SOLUTION = "#F97316"
 COLOR_START = "#2563EB"
@@ -157,14 +157,14 @@ class MazeSolver:
                                   bg=COLOR_BUTTON, fg=COLOR_TEXT)
         self.solve_btn.pack(side=tk.LEFT, padx=5)
         
-        self.algo_label = tk.Label(button_frame, text="Thuật toán: BFS", bg="#222222", fg=COLOR_TEXT)
+        self.algo_label = tk.Label(button_frame, text="Thuật toán: GBFS", bg="#222222", fg=COLOR_TEXT)
         self.algo_label.pack(side=tk.LEFT, padx=5)
 
         self.algo_btn = tk.Button(button_frame, text="Chọn thuật toán", command=self.show_algorithm_menu,
                                  bg=COLOR_BUTTON, fg=COLOR_TEXT)
         self.algo_btn.pack(side=tk.LEFT, padx=5)
         
-        self.compare_btn = tk.Button(button_frame, text="So sánh BFS vs A*", command=self.compare_algorithms,
+        self.compare_btn = tk.Button(button_frame, text="So sánh GBFS vs A*", command=self.compare_algorithms,
                                      bg="#16a34a", fg=COLOR_TEXT)
         self.compare_btn.pack(side=tk.LEFT, padx=5)
         
@@ -213,7 +213,7 @@ class MazeSolver:
         self.waypoint_mode = False  # Bật/tắt chế độ điểm mốc
         self.waypoint_all_mode = False
         self.is_animating = False
-        self.algorithm = "BFS"  # BFS or ASTAR
+        self.algorithm = "GBFS"  # GBFS or ASTAR
         self.comparison_results = None
         self.run_counter = 0
         self.last_visited: Set[Tuple[int, int]] = set()
@@ -412,7 +412,7 @@ class MazeSolver:
         self.history_text.config(state=tk.DISABLED)
 
     def append_compare_history(self, start_pos: Tuple[int, int],
-                               bfs_steps: int, bfs_visited: int, bfs_time: float,
+                               gbfs_steps: int, gbfs_visited: int, gbfs_time: float,
                                astar_steps: int, astar_visited: int, astar_time: float,
                                efficiency: float,
                                waypoint: Tuple[int, int] | None = None,
@@ -421,8 +421,8 @@ class MazeSolver:
         waypoint_text = f", WP={waypoint}" if waypoint else ""
         detail_text = f" | {detail}" if detail else ""
         line = (
-            f"#{self.run_counter} [COMPARE] Algo=BFS_vs_A* | Start={start_pos}{waypoint_text}"
-            f" | BFS: buoc={bfs_steps}, duyet={bfs_visited}, {bfs_time:.2f}ms"
+            f"#{self.run_counter} [COMPARE] Algo=GBFS_vs_A* | Start={start_pos}{waypoint_text}"
+            f" | GBFS: buoc={gbfs_steps}, duyet={gbfs_visited}, {gbfs_time:.2f}ms"
             f" | A*: buoc={astar_steps}, duyet={astar_visited}, {astar_time:.2f}ms"
             f" | TIET_KIEM={efficiency:.1f}%{detail_text}\n"
         )
@@ -682,34 +682,43 @@ class MazeSolver:
         self.stats_label.config(text="Bước đi: -, Đã duyệt: -, Thời gian: -, Lối ra: -")
         self.draw_maze()
 
-    def solve_bfs(self, grid: List[List[int]], source: Tuple[int, int], 
-                  goals: List[Tuple[int, int]]) -> Tuple[List[Tuple[int, int]], 
-                                                          List[Tuple[int, int]], 
-                                                          Tuple[int, int] | None]:
+    def solve_gbfs(self, grid: List[List[int]], source: Tuple[int, int],
+                   goals: List[Tuple[int, int]]) -> Tuple[List[Tuple[int, int]],
+                                                           List[Tuple[int, int]],
+                                                           Tuple[int, int] | None]:
         goal_set = set(goals)
-        q = deque([source])
-        visited_set = {source}
+
+        def heuristic(r: int, c: int) -> int:
+            return min(abs(r - gr) + abs(c - gc) for gr, gc in goals)
+
+        open_set = [(heuristic(source[0], source[1]), source)]
         parent = {source: None}
+        visited_set = set()
         visited_order = []
 
-        while q:
-            r, c = q.popleft()
-            visited_order.append((r, c))
-            
-            if (r, c) in goal_set:
-                path = []
-                current = (r, c)
-                while current is not None:
-                    path.append(current)
-                    current = parent[current]
-                path.reverse()
-                return visited_order, path, (r, c)
+        while open_set:
+            open_set.sort(key=lambda item: item[0])
+            _, current = open_set.pop(0)
+            if current in visited_set:
+                continue
 
+            visited_set.add(current)
+            visited_order.append(current)
+
+            if current in goal_set:
+                path = []
+                node = current
+                while node is not None:
+                    path.append(node)
+                    node = parent[node]
+                path.reverse()
+                return visited_order, path, current
+
+            r, c = current
             for nr, nc in self.neighbors4(r, c):
-                if grid[nr][nc] == 0 and (nr, nc) not in visited_set:
-                    visited_set.add((nr, nc))
-                    parent[(nr, nc)] = (r, c)
-                    q.append((nr, nc))
+                if grid[nr][nc] == 0 and (nr, nc) not in visited_set and (nr, nc) not in parent:
+                    parent[(nr, nc)] = current
+                    open_set.append((heuristic(nr, nc), (nr, nc)))
 
         return visited_order, [], None
 
@@ -848,7 +857,7 @@ class MazeSolver:
 
     def show_algorithm_menu(self):
         menu = tk.Menu(self.root, tearoff=0)
-        menu.add_command(label="BFS", command=lambda: self.set_algorithm("BFS"))
+        menu.add_command(label="GBFS", command=lambda: self.set_algorithm("GBFS"))
         menu.add_command(label="A*", command=lambda: self.set_algorithm("ASTAR"))
 
         x = self.algo_btn.winfo_rootx()
@@ -953,9 +962,9 @@ class MazeSolver:
             candidate_results = []
             for waypoint in self.waypoints:
                 start_time = time.time()
-                if self.algorithm == "BFS":
-                    visited_1, path_1, reached_wp = self.solve_bfs(self.maze, tuple(self.start), [waypoint])
-                    visited_2, path_2, exit_pos = self.solve_bfs(self.maze, waypoint, targets)
+                if self.algorithm == "GBFS":
+                    visited_1, path_1, reached_wp = self.solve_gbfs(self.maze, tuple(self.start), [waypoint])
+                    visited_2, path_2, exit_pos = self.solve_gbfs(self.maze, waypoint, targets)
                 else:
                     visited_1, path_1, reached_wp = self.solve_astar(self.maze, tuple(self.start), [waypoint])
                     visited_2, path_2, exit_pos = self.solve_astar(self.maze, waypoint, targets)
@@ -1068,8 +1077,8 @@ class MazeSolver:
         
         start_time = time.time()
         
-        if self.algorithm == "BFS":
-            visited_order, path, exit_pos = self.solve_bfs(self.maze, tuple(self.start), targets)
+        if self.algorithm == "GBFS":
+            visited_order, path, exit_pos = self.solve_gbfs(self.maze, tuple(self.start), targets)
         else:
             visited_order, path, exit_pos = self.solve_astar(self.maze, tuple(self.start), targets)
         
@@ -1128,7 +1137,7 @@ class MazeSolver:
         )
 
     def compare_algorithms(self):
-        """So sánh BFS và A* trên cùng một mê cung"""
+        """So sánh GBFS và A* trên cùng một mê cung"""
         if self.is_animating:
             return
 
@@ -1138,7 +1147,7 @@ class MazeSolver:
             return
 
         self.draw_maze()
-        self.status_label.config(text="Đang so sánh BFS và A*...")
+        self.status_label.config(text="Đang so sánh GBFS và A*...")
         self.comparison_label.config(text="Dang tinh toan...")
         self.is_animating = True
         self.ui_pump()
@@ -1146,13 +1155,13 @@ class MazeSolver:
         compare_detail = None
         if self.waypoint_mode and self.waypoints:
             if self.waypoint_all_mode:
-                bfs_result = self.solve_route_all_waypoints("BFS", self.waypoints, targets)
+                gbfs_result = self.solve_route_all_waypoints("GBFS", self.waypoints, targets)
                 astar_result = self.solve_route_all_waypoints("ASTAR", self.waypoints, targets)
-                if bfs_result:
-                    bfs_result = {
-                        **bfs_result,
+                if gbfs_result:
+                    gbfs_result = {
+                        **gbfs_result,
                         "waypoint": None,
-                        "scan_visited": bfs_result.get("visited_order", []),
+                        "scan_visited": gbfs_result.get("visited_order", []),
                     }
                 if astar_result:
                     astar_result = {
@@ -1162,25 +1171,25 @@ class MazeSolver:
                     }
                 compare_detail = "Che do qua tat ca diem moc"
             else:
-                bfs_result = self.solve_route_through_waypoints("BFS", self.waypoints, targets)
+                gbfs_result = self.solve_route_through_waypoints("GBFS", self.waypoints, targets)
                 astar_result = self.solve_route_through_waypoints("ASTAR", self.waypoints, targets)
 
-            if bfs_result:
-                bfs_visited = bfs_result["visited_order"]
-                bfs_path = bfs_result["full_path"]
-                bfs_exit = bfs_result["target"]
-                bfs_steps = bfs_result["total_steps"]
-                bfs_time = bfs_result["total_time"]
-                bfs_waypoint = bfs_result["waypoint"]
-                bfs_saved = bfs_result.get("saved_steps")
+            if gbfs_result:
+                gbfs_visited = gbfs_result["visited_order"]
+                gbfs_path = gbfs_result["full_path"]
+                gbfs_exit = gbfs_result["target"]
+                gbfs_steps = gbfs_result["total_steps"]
+                gbfs_time = gbfs_result["total_time"]
+                gbfs_waypoint = gbfs_result["waypoint"]
+                gbfs_saved = gbfs_result.get("saved_steps")
             else:
-                bfs_visited = []
-                bfs_path = []
-                bfs_exit = None
-                bfs_steps = 0
-                bfs_time = 0.0
-                bfs_waypoint = None
-                bfs_saved = None
+                gbfs_visited = []
+                gbfs_path = []
+                gbfs_exit = None
+                gbfs_steps = 0
+                gbfs_time = 0.0
+                gbfs_waypoint = None
+                gbfs_saved = None
 
             if astar_result:
                 astar_visited = astar_result["visited_order"]
@@ -1200,28 +1209,28 @@ class MazeSolver:
                 astar_saved = None
 
             if not self.waypoint_all_mode:
-                bfs_saved_text = f"{bfs_saved} buoc" if bfs_saved is not None else "khong co moc so sanh"
+                gbfs_saved_text = f"{gbfs_saved} buoc" if gbfs_saved is not None else "khong co moc so sanh"
                 astar_saved_text = f"{astar_saved} buoc" if astar_saved is not None else "khong co moc so sanh"
                 compare_detail = (
-                    f"BFS duyet {len(self.waypoints)} waypoint, chon WP={bfs_waypoint}, tiet kiem={bfs_saved_text} | "
+                    f"GBFS duyet {len(self.waypoints)} waypoint, chon WP={gbfs_waypoint}, tiet kiem={gbfs_saved_text} | "
                     f"A* duyet {len(self.waypoints)} waypoint, chon WP={astar_waypoint}, tiet kiem={astar_saved_text}"
                 )
-                self.status_label.config(text="Dang danh gia waypoint cho BFS/A* truoc khi chon moc toi uu...")
-                if bfs_result:
-                    self.animate_waypoint_scan(bfs_result.get("scan_visited", []), "BFS")
+                self.status_label.config(text="Dang danh gia waypoint cho GBFS/A* truoc khi chon moc toi uu...")
+                if gbfs_result:
+                    self.animate_waypoint_scan(gbfs_result.get("scan_visited", []), "GBFS")
                 if astar_result:
                     self.animate_waypoint_scan(astar_result.get("scan_visited", []), "ASTAR")
             else:
                 self.status_label.config(text="Dang so sanh che do tat ca diem moc...")
-                if bfs_result:
-                    self.animate_waypoint_scan(bfs_result.get("scan_visited", []), "BFS")
+                if gbfs_result:
+                    self.animate_waypoint_scan(gbfs_result.get("scan_visited", []), "GBFS")
                 if astar_result:
                     self.animate_waypoint_scan(astar_result.get("scan_visited", []), "ASTAR")
         else:
             start_time = time.time()
-            bfs_visited, bfs_path, bfs_exit = self.solve_bfs(self.maze, tuple(self.start), targets)
-            bfs_time = (time.time() - start_time) * 1000
-            bfs_steps = max(len(bfs_path) - 1, 0) if bfs_path else 0
+            gbfs_visited, gbfs_path, gbfs_exit = self.solve_gbfs(self.maze, tuple(self.start), targets)
+            gbfs_time = (time.time() - start_time) * 1000
+            gbfs_steps = max(len(gbfs_path) - 1, 0) if gbfs_path else 0
 
             start_time = time.time()
             astar_visited, astar_path, astar_exit = self.solve_astar(self.maze, tuple(self.start), targets)
@@ -1229,16 +1238,16 @@ class MazeSolver:
             astar_steps = max(len(astar_path) - 1, 0) if astar_path else 0
             self.status_label.config(text="Dang so sanh... Xem ket qua phia duoi")
 
-        if len(bfs_visited) > 0:
-            astar_efficiency = (len(bfs_visited) - len(astar_visited)) / len(bfs_visited) * 100
+        if len(gbfs_visited) > 0:
+            astar_efficiency = (len(gbfs_visited) - len(astar_visited)) / len(gbfs_visited) * 100
         else:
             astar_efficiency = 0
 
         self.comparison_results = {
-            'bfs_steps': bfs_steps,
-            'bfs_visited': len(bfs_visited),
-            'bfs_time': bfs_time,
-            'bfs_path': bfs_path,
+            'gbfs_steps': gbfs_steps,
+            'gbfs_visited': len(gbfs_visited),
+            'gbfs_time': gbfs_time,
+            'gbfs_path': gbfs_path,
             'astar_steps': astar_steps,
             'astar_visited': len(astar_visited),
             'astar_time': astar_time,
@@ -1246,12 +1255,12 @@ class MazeSolver:
             'efficiency': astar_efficiency
         }
 
-        compare_waypoint = bfs_waypoint if (self.waypoint_mode and self.waypoints) else None
+        compare_waypoint = gbfs_waypoint if (self.waypoint_mode and self.waypoints) else None
         self.append_compare_history(
             start_pos=tuple(self.start),
-            bfs_steps=bfs_steps,
-            bfs_visited=len(bfs_visited),
-            bfs_time=bfs_time,
+            gbfs_steps=gbfs_steps,
+            gbfs_visited=len(gbfs_visited),
+            gbfs_time=gbfs_time,
             astar_steps=astar_steps,
             astar_visited=len(astar_visited),
             astar_time=astar_time,
@@ -1264,17 +1273,17 @@ class MazeSolver:
         self.ui_pump()
 
         if self.waypoint_mode and self.waypoints:
-            bfs_visited_set = set(bfs_result.get("scan_visited", []) if bfs_result else [])
-            bfs_path_set = set()
-            for idx, (r, c) in enumerate(bfs_path):
-                bfs_path_set.add((r, c))
-                if self.should_render_frame(idx, len(bfs_path)):
-                    self.draw_maze(visited=bfs_visited_set, path=bfs_path_set, goal=bfs_exit, santa=(r, c))
+            gbfs_visited_set = set(gbfs_result.get("scan_visited", []) if gbfs_result else [])
+            gbfs_path_set = set()
+            for idx, (r, c) in enumerate(gbfs_path):
+                gbfs_path_set.add((r, c))
+                if self.should_render_frame(idx, len(gbfs_path)):
+                    self.draw_maze(visited=gbfs_visited_set, path=gbfs_path_set, goal=gbfs_exit, santa=(r, c))
                     self.ui_pump(3)
 
-            if bfs_path:
-                sr, sc = bfs_path[-1]
-                self.draw_maze(visited=bfs_visited_set, path=bfs_path_set, goal=bfs_exit, santa=(sr, sc))
+            if gbfs_path:
+                sr, sc = gbfs_path[-1]
+                self.draw_maze(visited=gbfs_visited_set, path=gbfs_path_set, goal=gbfs_exit, santa=(sr, sc))
 
             self.ui_pump(200)
 
@@ -1290,23 +1299,23 @@ class MazeSolver:
                 sr, sc = astar_path[-1]
                 self.draw_maze(astar_visited=astar_visited_set, path=astar_path_set, goal=astar_exit, santa=(sr, sc))
         else:
-            bfs_visited_set = set()
-            for idx, (r, c) in enumerate(bfs_visited):
-                bfs_visited_set.add((r, c))
-                if self.should_render_frame(idx, len(bfs_visited)):
-                    self.draw_maze(visited=bfs_visited_set, goal=bfs_exit)
+            gbfs_visited_set = set()
+            for idx, (r, c) in enumerate(gbfs_visited):
+                gbfs_visited_set.add((r, c))
+                if self.should_render_frame(idx, len(gbfs_visited)):
+                    self.draw_maze(visited=gbfs_visited_set, goal=gbfs_exit)
                     self.ui_pump(1)
 
-            bfs_path_set = set()
-            for idx, (r, c) in enumerate(bfs_path):
-                bfs_path_set.add((r, c))
-                if self.should_render_frame(idx, len(bfs_path)):
-                    self.draw_maze(visited=bfs_visited_set, path=bfs_path_set, goal=bfs_exit, santa=(r, c))
+            gbfs_path_set = set()
+            for idx, (r, c) in enumerate(gbfs_path):
+                gbfs_path_set.add((r, c))
+                if self.should_render_frame(idx, len(gbfs_path)):
+                    self.draw_maze(visited=gbfs_visited_set, path=gbfs_path_set, goal=gbfs_exit, santa=(r, c))
                     self.ui_pump(3)
 
-            if bfs_path:
-                sr, sc = bfs_path[-1]
-                self.draw_maze(visited=bfs_visited_set, path=bfs_path_set, goal=bfs_exit, santa=(sr, sc))
+            if gbfs_path:
+                sr, sc = gbfs_path[-1]
+                self.draw_maze(visited=gbfs_visited_set, path=gbfs_path_set, goal=gbfs_exit, santa=(sr, sc))
 
             self.ui_pump(200)
 
@@ -1314,7 +1323,7 @@ class MazeSolver:
             for idx, (r, c) in enumerate(astar_visited):
                 astar_visited_set.add((r, c))
                 if self.should_render_frame(idx, len(astar_visited)):
-                    self.draw_maze(visited=bfs_visited_set, astar_visited=astar_visited_set, goal=astar_exit)
+                    self.draw_maze(visited=gbfs_visited_set, astar_visited=astar_visited_set, goal=astar_exit)
                     self.ui_pump(1)
 
             astar_path_set = set()
@@ -1322,7 +1331,7 @@ class MazeSolver:
                 astar_path_set.add((r, c))
                 if self.should_render_frame(idx, len(astar_path)):
                     self.draw_maze(
-                        visited=bfs_visited_set,
+                        visited=gbfs_visited_set,
                         astar_visited=astar_visited_set,
                         path=astar_path_set,
                         goal=astar_exit,
@@ -1333,7 +1342,7 @@ class MazeSolver:
             if astar_path:
                 sr, sc = astar_path[-1]
                 self.draw_maze(
-                    visited=bfs_visited_set,
+                    visited=gbfs_visited_set,
                     astar_visited=astar_visited_set,
                     path=astar_path_set,
                     goal=astar_exit,
@@ -1344,7 +1353,7 @@ class MazeSolver:
         self.status_label.config(text="Hoan thanh so sanh. Xem ket qua phia duoi.")
 
     def display_comparison(self):
-        """Hiển thị kết quả so sánh BFS vs A*"""
+        """Hiển thị kết quả so sánh GBFS vs A*"""
         if self.comparison_results is None:
             text = "Khong co du lieu so sanh"
             self.comparison_label.config(text=text, fg="#FF6B6B")
@@ -1354,7 +1363,7 @@ class MazeSolver:
         r = self.comparison_results
         # Create readable comparison text
         comparison_text = (
-            f"BFS(Cyan):  {r['bfs_steps']} buoc | {r['bfs_visited']} o duyet | {r['bfs_time']:.2f}ms  |  "
+            f"GBFS(Cyan):  {r['gbfs_steps']} buoc | {r['gbfs_visited']} o duyet | {r['gbfs_time']:.2f}ms  |  "
             f"A*(Lime):  {r['astar_steps']} buoc | {r['astar_visited']} o duyet | {r['astar_time']:.2f}ms  |  "
             f"A* TIET KIEM {r['efficiency']:.1f}%"
         )
@@ -1436,8 +1445,8 @@ class MazeSolver:
         return ordered
 
     def solve_segment(self, algorithm: str, source: Tuple[int, int], goals: List[Tuple[int, int]]):
-        if algorithm == "BFS":
-            return self.solve_bfs(self.maze, source, goals)
+        if algorithm == "GBFS":
+            return self.solve_gbfs(self.maze, source, goals)
         return self.solve_astar(self.maze, source, goals)
 
     def bfs_scan_from_source(self, source: Tuple[int, int], waypoints: List[Tuple[int, int]] | None = None):
@@ -1611,7 +1620,7 @@ class MazeSolver:
         visited_order: List[Tuple[int, int]] = []
         full_path: List[Tuple[int, int]] = []
         current = start_pos
-        solve_segment = self.solve_bfs if algorithm == "BFS" else self.solve_astar
+        solve_segment = self.solve_gbfs if algorithm == "GBFS" else self.solve_astar
 
         for wp in best["order"]:
             visited, path, _ = solve_segment(self.maze, current, [wp])
@@ -1843,8 +1852,8 @@ class MazeSolver:
         self.ui_pump()
 
         start_time = time.time()
-        if self.algorithm == "BFS":
-            visited_order, path, exit_pos = self.solve_bfs(self.maze, tuple(self.start), targets)
+        if self.algorithm == "GBFS":
+            visited_order, path, exit_pos = self.solve_gbfs(self.maze, tuple(self.start), targets)
         else:
             visited_order, path, exit_pos = self.solve_astar(self.maze, tuple(self.start), targets)
         elapsed = (time.time() - start_time) * 1000
