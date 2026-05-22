@@ -13,30 +13,30 @@ try:
 except Exception:
     PIL_AVAILABLE = False
 
-# Constants
+# Hằng số
 ROWS = 51
 COLS = 81
 CELL_SIZE = 14
 EXIT_COUNT = 6
 WAYPOINT_COUNT = 4  # Tạo 4 điểm mốc
-START_POSITION = (25, 40)  # Center of maze
+START_POSITION = (25, 40)  # Trung tâm mê cung
 MAX_GENERATION_ATTEMPTS = 20
 VISITED_CELL_DELAY_MS = 5
 PATH_CELL_DELAY_MS = 15
 ANIMATION_FRAME_SKIP = 6
 
-# Complexity features - Many Walls Maze (Nhiều tường)
+# Độ phức tạp - Mê cung nhiều tường
 ROOM_COUNT = 0
 LOOP_CARVE_RATE = 0.15
 MIN_START_BRANCHES = 3
-BRAID_RATE = 0.30  # Increased to create more dead ends
+BRAID_RATE = 0.30  # Tăng để tạo nhiều ngõ cụt
 
-# Colors
+# Màu sắc
 COLOR_WALL = "#0F172A"
 COLOR_PATH = "#F8FAFC"
-COLOR_VISITED = "#22D3EE"  # Default visited
-COLOR_VISITED_BFS = "#22D3EE"  # GBFS visited - Cyan
-COLOR_VISITED_ASTAR = "#84CC16"  # A* visited - Lime green
+COLOR_VISITED = "#22D3EE"  # Màu ô đã duyệt (mặc định)
+COLOR_VISITED_BFS = "#22D3EE"  # Ô đã duyệt GBFS - Xanh lơ
+COLOR_VISITED_ASTAR = "#84CC16"  # Ô đã duyệt A* - Xanh lá mạ
 COLOR_SOLUTION = "#F97316"
 COLOR_START = "#2563EB"
 COLOR_EXIT = "#22C55E"
@@ -50,32 +50,33 @@ CHIMNEY_SCALE = 3.0
 
 class MazeSolver:
     def __init__(self):
+        # Khoi tao giao dien, trang thai, va sinh me cung ban dau.
         self.root = tk.Tk()
         self.root.title("Trình giải mê cung AI")
-        self.root.geometry("1200x900")  # Set initial window size
+        self.root.geometry("1200x900")  # Đặt kích thước cửa sổ ban đầu
         
         self.width = COLS * CELL_SIZE
         self.height = ROWS * CELL_SIZE
         
-        # Main container with grid layout
+        # Khung chính với bố cục lưới
         self.root.grid_rowconfigure(0, weight=1)
         self.root.grid_columnconfigure(0, weight=1)
 
-        # Top area: maze canvas (left) + run history (right)
+        # Khu vực trên: vùng vẽ mê cung (trái) + lịch sử chạy (phải)
         top_frame = tk.Frame(self.root, bg="black")
         top_frame.grid(row=0, column=0, sticky="nsew")
         top_frame.grid_rowconfigure(0, weight=1)
         top_frame.grid_columnconfigure(0, weight=4)
         top_frame.grid_columnconfigure(1, weight=1)
 
-        # Canvas frame - responsive
+        # Khung vùng vẽ co giãn theo kích thước
         canvas_frame = tk.Frame(top_frame, bg="black")
         canvas_frame.grid(row=0, column=0, sticky="nsew")
         canvas_frame.grid_rowconfigure(0, weight=1)
         canvas_frame.grid_columnconfigure(0, weight=1)
-        canvas_frame.grid_propagate(True)  # Allow frame to expand
+        canvas_frame.grid_propagate(True)  # Cho phép khung tự giãn
         
-        # Canvas
+        # Vùng vẽ
         self.canvas = Canvas(canvas_frame, bg="black", highlightthickness=0)
         self.canvas.grid(row=0, column=0, sticky="nsew")
         self.canvas.bind("<Configure>", self.on_canvas_configure)
@@ -98,7 +99,7 @@ class MazeSolver:
         self.chimney_last_size = None
         self.chimney_load_error = None
 
-        # Run history panel on the right side
+        # Bảng lịch sử chạy bên phải
         history_frame = tk.Frame(top_frame, bg="#0b1020", width=280)
         history_frame.grid(row=0, column=1, sticky="nsew")
         history_frame.grid_propagate(False)
@@ -133,15 +134,15 @@ class MazeSolver:
         self.history_text.insert(tk.END, "- Bấm Giai me cung de luu ket qua vao lich su.\n")
         self.history_text.config(state=tk.DISABLED)
         
-        # Tính kích thước cell dựa trên window geometry
-        # Canvas sẽ có width = root width, height = root height - button - status - comparison
-        # Tạm thời sử dụng estimate, sẽ được update trong draw_maze()
-        self.current_cell_size = CELL_SIZE  # Default cell size, will be updated in draw_maze()
+        # Tính kích thước ô dựa trên kích thước cửa sổ
+        # Vùng vẽ có chiều rộng = chiều rộng root, chiều cao = chiều cao root - nút - trạng thái - so sánh
+        # Tạm thời dùng giá trị ước lượng, sẽ cập nhật trong draw_maze()
+        self.current_cell_size = CELL_SIZE  # Kích thước ô mặc định, sẽ cập nhật trong draw_maze()
         
         self.original_width = self.width
         self.original_height = self.height
         
-        # Button frame
+        # Khung nút bấm
         button_frame = tk.Frame(self.root, bg="#222222")
         button_frame.grid(row=1, column=0, sticky="ew", padx=5, pady=5)
         
@@ -186,7 +187,7 @@ class MazeSolver:
                             bg="#db2777", fg=COLOR_TEXT)
         self.random_waypoint_btn.pack(side=tk.LEFT, padx=5)
         
-        # Status frame
+        # Khung trạng thái
         status_frame = tk.Frame(self.root, bg="#1a1a1a")
         status_frame.grid(row=2, column=0, sticky="ew")
         
@@ -197,15 +198,16 @@ class MazeSolver:
                                    bg="#1a1a1a", fg=COLOR_TEXT, wraplength=800)
         self.stats_label.pack(fill=tk.X, padx=5, pady=2)
         
-        # Comparison frame
+        # Khung so sánh
         comparison_frame = tk.Frame(self.root, bg="#1a1a1a", height=60)
         comparison_frame.grid(row=3, column=0, sticky="ew", padx=5, pady=5)
-        comparison_frame.grid_propagate(False)  # Don't shrink
+        comparison_frame.grid_propagate(False)  # Không tự co
         
         self.comparison_label = tk.Label(comparison_frame, text="Kết quả so sánh sẽ hiển thị ở đây...", font=("Arial", 10),
                                         bg="#1a1a1a", fg="#FFD700", justify=tk.LEFT)
         self.comparison_label.pack(fill=tk.BOTH, padx=5, pady=5, expand=True)
         
+        # Trang thai me cung va che do hien tai
         self.maze = []
         self.start = list(START_POSITION)
         self.exits = []
@@ -213,7 +215,7 @@ class MazeSolver:
         self.waypoint_mode = False  # Bật/tắt chế độ điểm mốc
         self.waypoint_all_mode = False
         self.is_animating = False
-        self.algorithm = "GBFS"  # GBFS or ASTAR
+        self.algorithm = "GBFS"  # GBFS hoặc ASTAR
         self.comparison_results = None
         self.run_counter = 0
         self.last_visited: Set[Tuple[int, int]] = set()
@@ -221,29 +223,34 @@ class MazeSolver:
         self.last_astar_visited: Set[Tuple[int, int]] = set()
         self.last_goal: Tuple[int, int] | None = None
 
+        # Tai tai nguyen hinh anh
         self.load_santa_image()
         self.load_chimney_image()
         
+        # Tao me cung moi va ve lan dau
         self.generate_new_maze()
         self.draw_maze()
         
-        # Force window update and trigger on_canvas_configure
+        # Ép cập nhật cửa sổ và kích hoạt on_canvas_configure
         self.root.update()
         self.root.update_idletasks()
     
     def on_canvas_configure(self, event):
-        """Handle canvas resize - scale maze to fit"""
+        # Xu ly thay doi kich thuoc canvas - co gian me cung vua khung
         if self.is_animating:
+            # Dang animate thi khong ve lai de tranh giat
             return
 
-        # Recalculate cell size based on actual event dimensions
+        # Tính lại kích thước ô dựa trên kích thước thật
         if event.width > 100 and event.height > 100:
+            # Tinh kich thuoc o theo chieu rong/cao moi
             cell_width = event.width / COLS
             cell_height = event.height / ROWS
             self.current_cell_size = min(cell_width, cell_height)
             
-            # Redraw maze với kích thước mới
+            # Ve lai me cung voi kich thuoc moi
             if hasattr(self, 'maze') and len(self.maze) > 0:
+                # Cap nhat anh theo ti le moi truoc khi ve
                 self.update_santa_image()
                 self.update_chimney_image()
                 self.draw_maze(
@@ -255,20 +262,27 @@ class MazeSolver:
                 )
 
     def load_santa_image(self):
+        # Tai anh ong gia Noel va xu ly truong hop loi.
+        # Kiem tra duong dan co ton tai hay khong
         if not os.path.exists(self.santa_image_path):
+            # Khong tim thay tep anh
             self.santa_base_image = None
             self.santa_load_error = f"Khong tim thay anh: {self.santa_image_path}"
             return
 
         if PIL_AVAILABLE:
+            # Doc anh bang Pillow neu co
             try:
+                # Chuyen ve RGBA de ve trong suot
                 self.santa_base_image = Image.open(self.santa_image_path).convert("RGBA")
                 self.santa_load_error = None
             except Exception as exc:
                 self.santa_base_image = None
                 self.santa_load_error = f"Loi Pillow: {exc}"
         else:
+            # Dung PhotoImage neu khong co Pillow
             try:
+                # PhotoImage chi ho tro mot so dinh dang co ban
                 self.santa_base_image = tk.PhotoImage(file=self.santa_image_path)
                 self.santa_load_error = None
             except Exception as exc:
@@ -276,20 +290,27 @@ class MazeSolver:
                 self.santa_load_error = f"Loi PhotoImage: {exc}"
 
     def load_chimney_image(self):
+        # Tai anh ong khoi va xu ly truong hop loi.
+        # Kiem tra duong dan co ton tai hay khong
         if not os.path.exists(self.chimney_image_path):
+            # Khong tim thay tep anh
             self.chimney_base_image = None
             self.chimney_load_error = f"Khong tim thay anh: {self.chimney_image_path}"
             return
 
         if PIL_AVAILABLE:
+            # Doc anh bang Pillow neu co
             try:
+                # Chuyen ve RGBA de ve trong suot
                 self.chimney_base_image = Image.open(self.chimney_image_path).convert("RGBA")
                 self.chimney_load_error = None
             except Exception as exc:
                 self.chimney_base_image = None
                 self.chimney_load_error = f"Loi Pillow: {exc}"
         else:
+            # Dung PhotoImage neu khong co Pillow
             try:
+                # PhotoImage chi ho tro mot so dinh dang co ban
                 self.chimney_base_image = tk.PhotoImage(file=self.chimney_image_path)
                 self.chimney_load_error = None
             except Exception as exc:
@@ -297,69 +318,91 @@ class MazeSolver:
                 self.chimney_load_error = f"Loi PhotoImage: {exc}"
 
     def update_santa_image(self):
+        # Cap nhat kich thuoc anh Noel theo ti le o hien tai.
         if not self.santa_base_image:
+            # Khong co anh nen bo qua
             return
+        # Tinh kich thuoc anh theo tile va he so scale
         target_size = max(1, int(round(self.current_cell_size * SANTA_SCALE)))
         if self.santa_last_size == target_size and self.santa_tk_image is not None:
+            # Khong doi kich thuoc thi khong can resize
             return
 
         if PIL_AVAILABLE and isinstance(self.santa_base_image, Image.Image):
+            # Resize bang Pillow
             resized = self.santa_base_image.resize((target_size, target_size), Image.LANCZOS)
             self.santa_tk_image = ImageTk.PhotoImage(resized)
         else:
+            # Resize bang PhotoImage (subsample/zoom)
             base = self.santa_base_image
             width = base.width()
             height = base.height()
             if width <= 0 or height <= 0:
                 return
 
+            # Tinh ti le so voi kich thuoc muc tieu
             scale = min(width / target_size, height / target_size)
             if scale >= 1:
+                # Anh lon hon, can giam ti le
                 factor = max(1, int(round(scale)))
                 self.santa_tk_image = base.subsample(factor, factor)
             else:
+                # Anh nho hon, can phong to
                 factor = max(1, int(round(1 / scale)))
                 self.santa_tk_image = base.zoom(factor, factor)
 
         self.santa_last_size = target_size
 
     def update_chimney_image(self):
+        # Cap nhat kich thuoc anh ong khoi theo ti le o hien tai.
         if not self.chimney_base_image:
+            # Khong co anh nen bo qua
             return
+        # Tinh kich thuoc anh theo tile va he so scale
         target_size = max(1, int(round(self.current_cell_size * CHIMNEY_SCALE)))
         if self.chimney_last_size == target_size and self.chimney_tk_image is not None:
+            # Khong doi kich thuoc thi khong can resize
             return
 
         if PIL_AVAILABLE and isinstance(self.chimney_base_image, Image.Image):
+            # Resize bang Pillow
             resized = self.chimney_base_image.resize((target_size, target_size), Image.LANCZOS)
             self.chimney_tk_image = ImageTk.PhotoImage(resized)
         else:
+            # Resize bang PhotoImage (subsample/zoom)
             base = self.chimney_base_image
             width = base.width()
             height = base.height()
             if width <= 0 or height <= 0:
                 return
 
+            # Tinh ti le so voi kich thuoc muc tieu
             scale = min(width / target_size, height / target_size)
             if scale >= 1:
+                # Anh lon hon, can giam ti le
                 factor = max(1, int(round(scale)))
                 self.chimney_tk_image = base.subsample(factor, factor)
             else:
+                # Anh nho hon, can phong to
                 factor = max(1, int(round(1 / scale)))
                 self.chimney_tk_image = base.zoom(factor, factor)
 
         self.chimney_last_size = target_size
 
     def draw_santa_at(self, r: int, c: int):
+        # Ve Noel tai toa do o (r, c).
+        # Tinh toa do ve theo tile va scale
         x, y = c * self.current_cell_size, r * self.current_cell_size
         size = self.current_cell_size * SANTA_SCALE
         offset = (size - self.current_cell_size) / 2
         draw_x = x - offset
         draw_y = y - offset
         if self.santa_tk_image:
+            # Ve anh Noel neu da co anh
             self.canvas.create_image(draw_x, draw_y, image=self.santa_tk_image, anchor="nw")
             return
 
+        # Neu khong co anh, ve hinh thay the
         self.canvas.create_rectangle(draw_x, draw_y, draw_x + size, draw_y + size, fill="#ef4444", outline="")
         self.canvas.create_text(
             draw_x + size / 2,
@@ -370,24 +413,32 @@ class MazeSolver:
         )
 
     def draw_chimney_at(self, r: int, c: int) -> bool:
+        # Ve ong khoi tai toa do o, tra ve True neu ve thanh cong.
+        # Tinh toa do ve theo tile va scale
         x, y = c * self.current_cell_size, r * self.current_cell_size
         size = self.current_cell_size * CHIMNEY_SCALE
         offset = (size - self.current_cell_size) / 2
         draw_x = x - offset
         draw_y = y - offset
         if self.chimney_tk_image:
+            # Ve anh ong khoi neu da co anh
             self.canvas.create_image(draw_x, draw_y, image=self.chimney_tk_image, anchor="nw")
             return True
         return False
 
     def ui_pump(self, delay_ms: int = 0):
+        # Cap nhat giao dien va tao tre nhe cho animation.
         if delay_ms > 0:
+            # Tao do tre ngat nho
             self.root.after(delay_ms)
+        # Cap nhat giao dien ngay
         self.root.update_idletasks()
         self.root.update()
 
     def should_render_frame(self, index: int, total: int) -> bool:
+        # Quyet dinh co ve khung hinh nay hay bo qua.
         if total <= 0:
+            # Khong co gi de ve
             return False
         return (index % ANIMATION_FRAME_SKIP == 0) or (index == total - 1)
 
@@ -396,7 +447,9 @@ class MazeSolver:
                            target: Tuple[int, int] | None = None,
                            waypoint: Tuple[int, int] | None = None,
                            detail: str | None = None):
+        # Ghi lai ket qua mot lan chay vao lich su.
         self.run_counter += 1
+        # Tao dong thong tin hien thi
         status = "OK" if success else "FAIL"
         waypoint_text = f", WP={waypoint}" if waypoint else ""
         target_text = f", DICH={target}" if target else ""
@@ -417,7 +470,9 @@ class MazeSolver:
                                efficiency: float,
                                waypoint: Tuple[int, int] | None = None,
                                detail: str | None = None):
+        # Ghi lai ket qua so sanh GBFS va A*.
         self.run_counter += 1
+        # Tao dong thong tin so sanh
         waypoint_text = f", WP={waypoint}" if waypoint else ""
         detail_text = f" | {detail}" if detail else ""
         line = (
@@ -432,29 +487,39 @@ class MazeSolver:
         self.history_text.config(state=tk.DISABLED)
 
     def clear_history(self):
+        # Xoa noi dung lich su chay.
         self.run_counter = 0
+        # Xoa text va ghi thong bao trang
         self.history_text.config(state=tk.NORMAL)
         self.history_text.delete("1.0", tk.END)
         self.history_text.insert(tk.END, "- Lich su da duoc xoa.\n")
         self.history_text.config(state=tk.DISABLED)
 
     def in_bounds(self, r: int, c: int) -> bool:
+        # Kiem tra toa do co nam trong bien me cung khong.
         return 0 <= r < ROWS and 0 <= c < COLS
 
     def neighbors4(self, r: int, c: int) -> List[Tuple[int, int]]:
+        # Lay cac hang xom 4 huong (len/xuong/trai/phai).
         neighbors = [(r-1, c), (r+1, c), (r, c-1), (r, c+1)]
+        # Loc cac hang xom nam trong bien
         return [(nr, nc) for nr, nc in neighbors if self.in_bounds(nr, nc)]
 
     def create_grid(self, fill_value: int = 1) -> List[List[int]]:
+        # Tao luoi me cung voi gia tri khoi tao.
+        # Fill_value: 1 la tuong, 0 la duong
         return [[fill_value] * COLS for _ in range(ROWS)]
 
     def generate_maze_base(self) -> List[List[int]]:
+        # Sinh me cung nen bang DFS tren luoi.
         grid = self.create_grid(1)
         stack = [list(START_POSITION)]
         grid[START_POSITION[0]][START_POSITION[1]] = 0
 
         while stack:
+            # Lay o cuoi cung trong stack
             r, c = stack[-1]
+            # Ung vien cach 2 o theo 4 huong
             candidates = [
                 (r - 2, c),
                 (r + 2, c),
@@ -465,9 +530,11 @@ class MazeSolver:
                          if 0 < nr < ROWS - 1 and 0 < nc < COLS - 1 and grid[nr][nc] == 1]
 
             if not candidates:
+                # Khong con duong mo rong thi lui lai
                 stack.pop()
                 continue
 
+            # Chon ngau nhien 1 huong va duc tuong
             nr, nc = random.choice(candidates)
             wall_r, wall_c = (r + nr) // 2, (c + nc) // 2
             grid[wall_r][wall_c] = 0
@@ -477,14 +544,17 @@ class MazeSolver:
         return grid
 
     def bfs_distances(self, grid: List[List[int]], source: Tuple[int, int]) -> List[List[int]]:
+        # Tinh khoang cach BFS tu mot nguon den moi o.
         dist = [[-1] * COLS for _ in range(ROWS)]
         q = deque([source])
         dist[source[0]][source[1]] = 0
 
         while q:
+            # Lay o dau tien trong hang doi
             r, c = q.popleft()
             for nr, nc in self.neighbors4(r, c):
                 if grid[nr][nc] == 0 and dist[nr][nc] == -1:
+                    # Cap nhat khoang cach va them vao hang doi
                     dist[nr][nc] = dist[r][c] + 1
                     q.append((nr, nc))
 
@@ -492,42 +562,47 @@ class MazeSolver:
 
     def place_distinct_exits(self, grid: List[List[int]], source: Tuple[int, int], 
                             desired: int = EXIT_COUNT) -> List[Tuple[int, int]]:
+        # Chon cac loi ra cach nhau mot khoang toi thieu.
         dist = self.bfs_distances(grid, source)
         candidates = []
         
-        # Find cells inside the maze at various distances from source
-        for r in range(5, ROWS - 5):  # Avoid edges
+        # Tìm các ô trong mê cung ở nhiều khoảng cách từ điểm bắt đầu
+        for r in range(5, ROWS - 5):  # Tránh sát mép
             for c in range(5, COLS - 5):
-                if grid[r][c] == 0 and dist[r][c] > 0:  # Must be a path
+                if grid[r][c] == 0 and dist[r][c] > 0:  # Phải là đường đi
                     candidates.append(((r, c), dist[r][c]))
         
-        # Sort by distance and select diverse positions
+        # Sắp xếp theo khoảng cách và chọn vị trí đa dạng
         candidates.sort(key=lambda x: x[1], reverse=True)
         
         selected = []
-        used_positions = {source}  # Don't place exit at start
-        MIN_EXIT_DISTANCE = 15  # Minimum distance between exits
+        used_positions = {source}  # Không đặt lối ra tại điểm bắt đầu
+        MIN_EXIT_DISTANCE = 15  # Khoảng cách tối thiểu giữa các lối ra
         
         for exit_pos, distance in candidates:
+            # Dung khi du so luong loi ra
             if len(selected) >= desired:
                 break
             
-            # Check if this exit is far enough from all selected exits
+            # Kiểm tra lối ra này có đủ xa các lối ra đã chọn hay không
             is_far_enough = True
             for selected_exit in selected:
+                # Dung Manhattan distance de do do xa
                 manhattan_dist = abs(exit_pos[0] - selected_exit[0]) + abs(exit_pos[1] - selected_exit[1])
                 if manhattan_dist < MIN_EXIT_DISTANCE:
                     is_far_enough = False
                     break
             
             if is_far_enough and exit_pos not in used_positions:
+                # Luu lai loi ra hop le
                 selected.append(exit_pos)
                 used_positions.add(exit_pos)
         
-        # If not enough exits, relax the distance requirement
+        # Nếu chưa đủ lối ra, giảm yêu cầu khoảng cách
         if len(selected) < desired:
+            # Thu lai voi khoang cach nho hon
             candidates.sort(key=lambda x: x[1], reverse=True)
-            MIN_EXIT_DISTANCE = 10  # Relax requirement
+            MIN_EXIT_DISTANCE = 10  # Giảm yêu cầu
             
             for exit_pos, distance in candidates:
                 if len(selected) >= desired:
@@ -537,23 +612,27 @@ class MazeSolver:
                 
                 is_far_enough = True
                 for selected_exit in selected:
+                    # Dung Manhattan distance de do do xa
                     manhattan_dist = abs(exit_pos[0] - selected_exit[0]) + abs(exit_pos[1] - selected_exit[1])
                     if manhattan_dist < MIN_EXIT_DISTANCE:
                         is_far_enough = False
                         break
                 
                 if is_far_enough:
+                    # Them loi ra neu thoa dieu kien
                     selected.append(exit_pos)
                     used_positions.add(exit_pos)
         
         return selected
 
     def carve_loops(self, grid: List[List[int]]):
+        # Tao them vong lap de me cung it bi cua.
         wall_cells = []
         for r in range(1, ROWS - 1):
             for c in range(1, COLS - 1):
                 if grid[r][c] != 1:
                     continue
+                # Tim cac tuong co the duc tao vong
                 ns = [(nr, nc) for nr, nc in self.neighbors4(r, c) if grid[nr][nc] == 0]
                 if len(ns) >= 2:
                     vert = [n for n in ns if n[0] != r]
@@ -561,21 +640,25 @@ class MazeSolver:
                     if (len(vert) == 2 and len(horiz) == 0) or (len(horiz) == 2 and len(vert) == 0):
                         wall_cells.append((r, c))
 
+        # Tron danh sach tuong va duc theo ti le
         random.shuffle(wall_cells)
         target = int(len(wall_cells) * LOOP_CARVE_RATE)
         for r, c in wall_cells[:target]:
             grid[r][c] = 0
 
     def braid_maze(self, grid: List[List[int]]):
+        # Giam so ngo cut bang cach mo them loi noi.
         dead_ends = []
         for r in range(1, ROWS - 1):
             for c in range(1, COLS - 1):
                 if grid[r][c] != 0:
                     continue
+                # Dem so hang xom duong di
                 ns = [(nr, nc) for nr, nc in self.neighbors4(r, c) if grid[nr][nc] == 0]
                 if len(ns) == 1:
                     dead_ends.append((r, c))
 
+        # Tron va mo them loi noi ngau nhien
         random.shuffle(dead_ends)
         target = int(len(dead_ends) * BRAID_RATE)
         for r, c in dead_ends[:target]:
@@ -583,18 +666,22 @@ class MazeSolver:
             for nr, nc in [(r-1, c), (r+1, c), (r, c-1), (r, c+1)]:
                 if not self.in_bounds(nr, nc) or grid[nr][nc] != 1:
                     continue
+                # Tim tuong co tiep giap voi duong
                 wall_neighbors2 = [(nnr, nnc) for nnr, nnc in self.neighbors4(nr, nc) if grid[nnr][nnc] == 0]
                 if wall_neighbors2:
                     wall_neighbors.append((nr, nc))
             
             if wall_neighbors:
+                # Mo 1 tuong de noi thong
                 wr, wc = random.choice(wall_neighbors)
                 grid[wr][wc] = 0
 
     def pick_random_start(self, grid: List[List[int]], blocked: Set[Tuple[int, int]] | None = None) -> Tuple[int, int] | None:
+        # Chon mot diem bat dau ngau nhien khong bi chan.
         if blocked is None:
             blocked = set()
 
+        # Thu thap cac o duong hop le
         candidates = []
         for r in range(1, ROWS - 1):
             for c in range(1, COLS - 1):
@@ -607,35 +694,41 @@ class MazeSolver:
         return random.choice(candidates)
 
     def randomize_start_position(self):
+        # Ngau nhien lai diem bat dau trong me cung.
         if self.is_animating:
             return
         if not self.maze:
             self.status_label.config(text="Chưa có mê cung để random điểm bắt đầu.")
             return
 
+        # Khong chon trung exit hay waypoint
         blocked = set(self.exits) | set(self.waypoints)
         new_start = self.pick_random_start(self.maze, blocked)
         if new_start is None:
             self.status_label.config(text="Không tìm được vị trí bắt đầu hợp lệ.")
             return
 
+        # Cap nhat trang thai va ve lai
         self.start = [new_start[0], new_start[1]]
         self.status_label.config(text=f"Đã random điểm bắt đầu: {new_start}")
         self.stats_label.config(text="Bước đi: -, Đã duyệt: -, Thời gian: -, Lối ra: -")
         self.draw_maze()
 
     def randomize_waypoint(self):
+        # Ngau nhien lai cac diem moc.
         if self.is_animating:
             return
         if not self.maze:
             self.status_label.config(text="Chưa có mê cung để random điểm mốc.")
             return
 
+        # Sinh lai danh sach waypoint
         new_waypoints = self.generate_waypoints(self.maze, tuple(self.start), self.exits)
         if not new_waypoints:
             self.status_label.config(text="Không tìm được vị trí điểm mốc hợp lệ.")
             return
 
+        # Cap nhat va ve lai neu can
         self.waypoints = new_waypoints
         if self.waypoint_mode:
             self.status_label.config(text=f"Đã random {len(self.waypoints)} điểm mốc.")
@@ -644,11 +737,14 @@ class MazeSolver:
         self.draw_maze()
 
     def generate_new_maze(self):
+        # Sinh me cung moi va cap nhat trang thai hien thi.
         for attempt in range(MAX_GENERATION_ATTEMPTS):
+            # Tao me cung nen va them do phuc tap
             grid = self.generate_maze_base()
             self.carve_loops(grid)
             self.braid_maze(grid)
 
+            # Chon start, exit, waypoint
             source = self.pick_random_start(grid)
             if source is None:
                 continue
@@ -656,6 +752,7 @@ class MazeSolver:
             waypoints = self.generate_waypoints(grid, source, exits)
             
             if len(exits) >= 2:
+                # Luu trang thai me cung hop le
                 self.maze = grid
                 self.start = list(source)
                 self.exits = exits
@@ -665,6 +762,7 @@ class MazeSolver:
                 self.draw_maze()
                 return
 
+        # Neu qua nhieu lan khong du exit, tao me cung toi thieu
         grid = self.generate_maze_base()
         self.carve_loops(grid)
         self.braid_maze(grid)
@@ -686,9 +784,11 @@ class MazeSolver:
                    goals: List[Tuple[int, int]]) -> Tuple[List[Tuple[int, int]],
                                                            List[Tuple[int, int]],
                                                            Tuple[int, int] | None]:
+        # Giai me cung bang GBFS theo heuristic Manhattan.
         goal_set = set(goals)
 
         def heuristic(r: int, c: int) -> int:
+            # Tinh heuristic Manhattan toi diem dich gan nhat.
             return min(abs(r - gr) + abs(c - gc) for gr, gc in goals)
 
         open_set = [(heuristic(source[0], source[1]), source)]
@@ -726,9 +826,11 @@ class MazeSolver:
                     goals: List[Tuple[int, int]]) -> Tuple[List[Tuple[int, int]], 
                                                             List[Tuple[int, int]], 
                                                             Tuple[int, int] | None]:
+        # Giai me cung bang A* voi f = g + h.
         goal_set = set(goals)
         
         def heuristic(r: int, c: int) -> int:
+            # Tinh heuristic Manhattan toi diem dich gan nhat.
             return min(abs(r - gr) + abs(c - gc) for gr, gc in goals)
         
         open_set = [(heuristic(source[0], source[1]), source)]
@@ -774,6 +876,7 @@ class MazeSolver:
                   goal: Tuple[int, int] = None,
                   astar_visited: Set[Tuple[int, int]] = None,
                   santa: Tuple[int, int] | None = None):
+        # Ve me cung va cac lop duyet/duong di len canvas.
         if visited is None:
             visited = set()
         if path is None:
@@ -781,33 +884,37 @@ class MazeSolver:
         if astar_visited is None:
             astar_visited = set()
 
-        # Keep last rendered state so resize/configure redraw does not wipe animation result.
+        # Lưu trạng thái vẽ gần nhất để resize/refresh không xóa kết quả animation.
         self.last_visited = set(visited)
         self.last_path = set(path)
         self.last_astar_visited = set(astar_visited)
         self.last_goal = goal
         self.last_santa = santa
 
-        # Get canvas dimensions using update_idletasks to ensure valid values
+        # Lấy kích thước vùng vẽ sau update_idletasks để đảm bảo giá trị đúng
+        # Cap nhat kich thuoc canvas thuc te
         self.canvas.update_idletasks()
         canvas_width = self.canvas.winfo_width()
         canvas_height = self.canvas.winfo_height()
         
         if canvas_width > 100 and canvas_height > 100:
-            # Calculate cell size to fill available space
+            # Tính kích thước ô để lấp đầy không gian
             cell_width = canvas_width / COLS
             cell_height = canvas_height / ROWS
             
-            # Use min to keep aspect ratio square and fit in canvas
+            # Dùng min để giữ tỉ lệ vuông và vừa vùng vẽ
             self.current_cell_size = min(cell_width, cell_height)
 
+        # Cap nhat anh theo kich thuoc moi
         self.update_santa_image()
         self.update_chimney_image()
 
+        # Xoa toan bo khung truoc khi ve lai
         self.canvas.delete("all")
 
         for r in range(ROWS):
             for c in range(COLS):
+                # Tinh toa do ve cho o hien tai
                 x, y = c * self.current_cell_size, r * self.current_cell_size
                 if self.maze[r][c] == 1:
                     color = COLOR_WALL
@@ -820,42 +927,50 @@ class MazeSolver:
                 else:
                     color = COLOR_PATH
                 
+                # Ve o vuong theo mau tuong/duong/duyet
                 self.canvas.create_rectangle(x, y, x + self.current_cell_size, y + self.current_cell_size, fill=color, outline="")
 
-        # Draw exits
+        # Vẽ lối ra
         for er, ec in self.exits:
+            # Ve o exit tren canvas
             x, y = ec * self.current_cell_size, er * self.current_cell_size
             self.canvas.create_rectangle(x, y, x + self.current_cell_size, y + self.current_cell_size, fill=COLOR_EXIT, outline="")
 
-        # Draw waypoints if mode enabled
+        # Vẽ điểm mốc nếu đang bật chế độ
         if self.waypoint_mode:
             for wr, wc in self.waypoints:
+                # Uu tien ve anh ong khoi neu co
                 if not self.draw_chimney_at(wr, wc):
                     x, y = wc * self.current_cell_size, wr * self.current_cell_size
                     self.canvas.create_rectangle(x, y, x + self.current_cell_size, y + self.current_cell_size, fill=COLOR_WAYPOINT, outline="")
 
-        # Draw start
+        # Vẽ điểm bắt đầu
         sr, sc = self.start
+        # Ve o bat dau
         x, y = sc * self.current_cell_size, sr * self.current_cell_size
         self.canvas.create_rectangle(x, y, x + self.current_cell_size, y + self.current_cell_size, fill=COLOR_START, outline="")
 
-        # Draw goal
+        # Vẽ đích
         if goal:
+            # Ve o dich
             gr, gc = goal
             x, y = gc * self.current_cell_size, gr * self.current_cell_size
             self.canvas.create_rectangle(x, y, x + self.current_cell_size, y + self.current_cell_size, fill=COLOR_GOAL, outline="")
 
         if santa:
+            # Ve Santa di chuyen theo duong
             self.draw_santa_at(santa[0], santa[1])
 
         self.root.update_idletasks()
 
     def set_algorithm(self, algo: str):
+        # Cap nhat thuat toan dang su dung.
         self.algorithm = algo
         self.algo_label.config(text=f"Thuật toán: {self.algorithm}")
         self.status_label.config(text=f"Đã chọn thuật toán: {self.algorithm}")
 
     def show_algorithm_menu(self):
+        # Hien menu chon thuat toan.
         menu = tk.Menu(self.root, tearoff=0)
         menu.add_command(label="GBFS", command=lambda: self.set_algorithm("GBFS"))
         menu.add_command(label="A*", command=lambda: self.set_algorithm("ASTAR"))
@@ -866,6 +981,7 @@ class MazeSolver:
         menu.grab_release()
 
     def solve_maze(self):
+        # Giai me cung theo che do hien tai va animate ket qua.
         if self.is_animating:
             return
 
@@ -1026,7 +1142,7 @@ class MazeSolver:
                 )
                 saving_text = f"ngắn hơn waypoint tốt thứ 2 {saving_steps} bước"
 
-            # Animate visited cells trước
+            # Mô phỏng các ô đã duyệt trước
             visited_set = set()
             for idx, (r, c) in enumerate(visited_order):
                 visited_set.add((r, c))
@@ -1034,7 +1150,7 @@ class MazeSolver:
                     self.draw_maze(visited=visited_set, goal=exit_pos)
                     self.ui_pump(VISITED_CELL_DELAY_MS)
             
-            # Animate path sau
+            # Mô phỏng đường đi sau
             path_set = set()
             for idx, (r, c) in enumerate(full_path):
                 path_set.add((r, c))
@@ -1099,7 +1215,7 @@ class MazeSolver:
             self.is_animating = False
             return
 
-        # Animate visited cells
+        # Mô phỏng các ô đã duyệt
         visited_set = set()
         for idx, (r, c) in enumerate(visited_order):
             visited_set.add((r, c))
@@ -1107,7 +1223,7 @@ class MazeSolver:
                 self.draw_maze(visited=visited_set, goal=exit_pos)
                 self.ui_pump(VISITED_CELL_DELAY_MS)
 
-        # Animate path
+        # Mô phỏng đường đi
         path_set = set()
         for idx, (r, c) in enumerate(path):
             path_set.add((r, c))
@@ -1137,15 +1253,17 @@ class MazeSolver:
         )
 
     def compare_algorithms(self):
-        """So sánh GBFS và A* trên cùng một mê cung"""
+        # So sanh GBFS va A* tren cung mot me cung
         if self.is_animating:
             return
 
+        # Lay danh sach dich (loi ra)
         targets = self.exits
         if not targets:
             self.status_label.config(text="Không có mục tiêu hợp lệ.")
             return
 
+        # Chuan bi giao dien truoc khi chay so sanh
         self.draw_maze()
         self.status_label.config(text="Đang so sánh GBFS và A*...")
         self.comparison_label.config(text="Dang tinh toan...")
@@ -1154,7 +1272,9 @@ class MazeSolver:
 
         compare_detail = None
         if self.waypoint_mode and self.waypoints:
+            # Che do waypoint: can tinh ket qua theo waypoint
             if self.waypoint_all_mode:
+                # Di qua tat ca waypoint
                 gbfs_result = self.solve_route_all_waypoints("GBFS", self.waypoints, targets)
                 astar_result = self.solve_route_all_waypoints("ASTAR", self.waypoints, targets)
                 if gbfs_result:
@@ -1171,6 +1291,7 @@ class MazeSolver:
                     }
                 compare_detail = "Che do qua tat ca diem moc"
             else:
+                # Chon 1 waypoint toi uu
                 gbfs_result = self.solve_route_through_waypoints("GBFS", self.waypoints, targets)
                 astar_result = self.solve_route_through_waypoints("ASTAR", self.waypoints, targets)
 
@@ -1209,6 +1330,7 @@ class MazeSolver:
                 astar_saved = None
 
             if not self.waypoint_all_mode:
+                # Ghi chu ly do chon waypoint
                 gbfs_saved_text = f"{gbfs_saved} buoc" if gbfs_saved is not None else "khong co moc so sanh"
                 astar_saved_text = f"{astar_saved} buoc" if astar_saved is not None else "khong co moc so sanh"
                 compare_detail = (
@@ -1217,16 +1339,19 @@ class MazeSolver:
                 )
                 self.status_label.config(text="Dang danh gia waypoint cho GBFS/A* truoc khi chon moc toi uu...")
                 if gbfs_result:
+                    # Animate qua trinh danh gia waypoint
                     self.animate_waypoint_scan(gbfs_result.get("scan_visited", []), "GBFS")
                 if astar_result:
                     self.animate_waypoint_scan(astar_result.get("scan_visited", []), "ASTAR")
             else:
+                # Animate che do qua tat ca waypoint
                 self.status_label.config(text="Dang so sanh che do tat ca diem moc...")
                 if gbfs_result:
                     self.animate_waypoint_scan(gbfs_result.get("scan_visited", []), "GBFS")
                 if astar_result:
                     self.animate_waypoint_scan(astar_result.get("scan_visited", []), "ASTAR")
         else:
+            # Che do binh thuong: chay GBFS va A* truc tiep
             start_time = time.time()
             gbfs_visited, gbfs_path, gbfs_exit = self.solve_gbfs(self.maze, tuple(self.start), targets)
             gbfs_time = (time.time() - start_time) * 1000
@@ -1238,11 +1363,13 @@ class MazeSolver:
             astar_steps = max(len(astar_path) - 1, 0) if astar_path else 0
             self.status_label.config(text="Dang so sanh... Xem ket qua phia duoi")
 
+        # Tinh phan tram tiet kiem so o duyet
         if len(gbfs_visited) > 0:
             astar_efficiency = (len(gbfs_visited) - len(astar_visited)) / len(gbfs_visited) * 100
         else:
             astar_efficiency = 0
 
+        # Luu ket qua so sanh de hien thi
         self.comparison_results = {
             'gbfs_steps': gbfs_steps,
             'gbfs_visited': len(gbfs_visited),
@@ -1273,6 +1400,7 @@ class MazeSolver:
         self.ui_pump()
 
         if self.waypoint_mode and self.waypoints:
+            # Animate lai duong di GBFS
             gbfs_visited_set = set(gbfs_result.get("scan_visited", []) if gbfs_result else [])
             gbfs_path_set = set()
             for idx, (r, c) in enumerate(gbfs_path):
@@ -1287,6 +1415,7 @@ class MazeSolver:
 
             self.ui_pump(200)
 
+            # Animate lai duong di A*
             astar_visited_set = set(astar_result.get("scan_visited", []) if astar_result else [])
             astar_path_set = set()
             for idx, (r, c) in enumerate(astar_path):
@@ -1299,6 +1428,7 @@ class MazeSolver:
                 sr, sc = astar_path[-1]
                 self.draw_maze(astar_visited=astar_visited_set, path=astar_path_set, goal=astar_exit, santa=(sr, sc))
         else:
+            # Animate GBFS truoc
             gbfs_visited_set = set()
             for idx, (r, c) in enumerate(gbfs_visited):
                 gbfs_visited_set.add((r, c))
@@ -1319,6 +1449,7 @@ class MazeSolver:
 
             self.ui_pump(200)
 
+            # Sau do animate A*
             astar_visited_set = set()
             for idx, (r, c) in enumerate(astar_visited):
                 astar_visited_set.add((r, c))
@@ -1353,15 +1484,16 @@ class MazeSolver:
         self.status_label.config(text="Hoan thanh so sanh. Xem ket qua phia duoi.")
 
     def display_comparison(self):
-        """Hiển thị kết quả so sánh GBFS vs A*"""
+        # Hien thi ket qua so sanh GBFS vs A*
         if self.comparison_results is None:
             text = "Khong co du lieu so sanh"
             self.comparison_label.config(text=text, fg="#FF6B6B")
             self.root.update_idletasks()
             return
         
+        # Doc ket qua da luu
         r = self.comparison_results
-        # Create readable comparison text
+        # Tạo chuỗi so sánh dễ đọc
         comparison_text = (
             f"GBFS(Cyan):  {r['gbfs_steps']} buoc | {r['gbfs_visited']} o duyet | {r['gbfs_time']:.2f}ms  |  "
             f"A*(Lime):  {r['astar_steps']} buoc | {r['astar_visited']} o duyet | {r['astar_time']:.2f}ms  |  "
@@ -1374,22 +1506,27 @@ class MazeSolver:
     def generate_waypoints(self, grid: List[List[int]], source: Tuple[int, int], 
                           exits: List[Tuple[int, int]],
                           blocked: List[Tuple[int, int]] | None = None) -> List[Tuple[int, int]]:
-        """Sinh ra 4 điểm mốc ngẫu nhiên, không trùng start/exit"""
+        # Sinh ra 4 diem moc ngau nhien, khong trung start/exit
+        # Tap hop vi tri khong duoc chon
         used_positions = {source}
         used_positions.update(exits)
         if blocked:
             used_positions.update(blocked)
+        # Thu thap tat ca o duong hop le
         all_paths = []
         for r in range(1, ROWS - 1):
             for c in range(1, COLS - 1):
                 if grid[r][c] == 0 and (r, c) not in used_positions:
                     all_paths.append((r, c))
+        # Neu khong du, tra ve toan bo
         if len(all_paths) < WAYPOINT_COUNT:
             return all_paths
+        # Lay mau ngau nhien so waypoint can co
         return random.sample(all_paths, WAYPOINT_COUNT)
 
     def toggle_waypoint_mode(self):
-        """Bật/tắt chế độ điểm mốc"""
+        # Bat/tat che do diem moc
+        # Cap nhat co che waypoint va giao dien
         self.waypoint_mode = not self.waypoint_mode
         if not self.waypoint_mode and self.waypoint_all_mode:
             self.waypoint_all_mode = False
@@ -1408,7 +1545,8 @@ class MazeSolver:
         self.draw_maze()
 
     def toggle_waypoint_all_mode(self):
-        """Bật/tắt chế độ đi qua tất cả điểm mốc"""
+        # Bat/tat che do di qua tat ca diem moc
+        # Chi cho phep neu che do waypoint dang bat
         if not self.waypoint_mode:
             self.status_label.config(text="Bật chế độ điểm mốc trước khi dùng chế độ qua tất cả mốc.")
             return
@@ -1427,7 +1565,7 @@ class MazeSolver:
 
     def nearest_neighbor_order(self, points: List[Tuple[int, int]], 
                               start: Tuple[int, int]) -> List[Tuple[int, int]]:
-        """Tìm thứ tự tối ưu các điểm bằng nearest neighbor heuristic"""
+        # Tim thu tu toi uu cac diem bang nearest neighbor heuristic
         if not points:
             return []
         
@@ -1445,11 +1583,14 @@ class MazeSolver:
         return ordered
 
     def solve_segment(self, algorithm: str, source: Tuple[int, int], goals: List[Tuple[int, int]]):
+        # Giai mot doan duong bang thuat toan chi dinh.
         if algorithm == "GBFS":
             return self.solve_gbfs(self.maze, source, goals)
         return self.solve_astar(self.maze, source, goals)
 
     def bfs_scan_from_source(self, source: Tuple[int, int], waypoints: List[Tuple[int, int]] | None = None):
+        # Quet BFS tu diem bat dau, dung khi da tim het waypoint.
+        # Luu khoang cach va parent de truy vet
         dist = [[-1] * COLS for _ in range(ROWS)]
         parent: dict[Tuple[int, int], Tuple[int, int] | None] = {source: None}
         q = deque([source])
@@ -1463,6 +1604,7 @@ class MazeSolver:
             visited_order.append((r, c))
             if waypoint_set and (r, c) in waypoint_set:
                 found_waypoints.add((r, c))
+                # Dung neu da tim het waypoint
                 if len(found_waypoints) == len(waypoint_set):
                     break
             for nr, nc in self.neighbors4(r, c):
@@ -1474,6 +1616,8 @@ class MazeSolver:
         return visited_order, dist, parent
 
     def bfs_scan_from_targets(self, targets: List[Tuple[int, int]]):
+        # Quet BFS tu tap dich de lay khoang cach toi moi o.
+        # Khoi tao hang doi tu nhieu dich
         dist = [[-1] * COLS for _ in range(ROWS)]
         parent: dict[Tuple[int, int], Tuple[int, int] | None] = {}
         q = deque()
@@ -1494,6 +1638,8 @@ class MazeSolver:
         return dist, parent
 
     def reconstruct_path_from_parent(self, parent: dict, start: Tuple[int, int], target: Tuple[int, int]):
+        # Phuc hoi duong di tu bang parent tu start den target.
+        # Neu khong co duong di thi tra ve rong
         if target not in parent:
             return []
 
@@ -1509,6 +1655,8 @@ class MazeSolver:
         return path
 
     def reconstruct_path_to_target(self, parent_to_target: dict, source: Tuple[int, int]):
+        # Phuc hoi duong di tu source den dich theo parent.
+        # Neu khong co duong di thi tra ve rong
         if source not in parent_to_target:
             return []
 
@@ -1521,14 +1669,17 @@ class MazeSolver:
 
     def solve_route_through_waypoints(self, algorithm: str, waypoints: List[Tuple[int, int]],
                                       targets: List[Tuple[int, int]]):
+        # Chon waypoint toi uu va giai duong di qua waypoint do.
         if not waypoints or not targets:
             return None
 
+        # Quet BFS de hien thi qua trinh danh gia
         start_time = time.time()
         scan_visited, _, _ = self.bfs_scan_from_source(tuple(self.start), waypoints)
         candidates = []
 
         for waypoint in waypoints:
+            # Tinh duong start -> waypoint -> exit
             visited_1, path_1, reached_wp = self.solve_segment(algorithm, tuple(self.start), [waypoint])
             if not path_1 or not reached_wp:
                 continue
@@ -1539,6 +1690,7 @@ class MazeSolver:
 
             full_path = path_1 + path_2[1:]
             visited_order = list(dict.fromkeys(visited_1 + visited_2))
+            # Luu ung vien hop le
             candidates.append({
                 "waypoint": waypoint,
                 "order": (waypoint,),
@@ -1553,6 +1705,7 @@ class MazeSolver:
         if not candidates:
             return None
 
+        # Chon ung vien co tong buoc nho nhat
         candidates.sort(key=lambda item: item["total_steps"])
         best = candidates[0]
         elapsed_total = (time.time() - start_time) * 1000
@@ -1567,9 +1720,11 @@ class MazeSolver:
 
     def solve_route_all_waypoints(self, algorithm: str, waypoints: List[Tuple[int, int]],
                                   targets: List[Tuple[int, int]]):
+        # Tim thu tu di qua tat ca waypoint voi tong buoc nho nhat.
         if not waypoints or not targets:
             return None
 
+        # Tinh ban do khoang cach tu start va moi waypoint
         start_time = time.time()
         start_pos = tuple(self.start)
         dist_maps = {start_pos: self.bfs_distances(self.maze, start_pos)}
@@ -1577,6 +1732,7 @@ class MazeSolver:
             dist_maps[wp] = self.bfs_distances(self.maze, wp)
 
         best = None
+        # Thu tat ca thu tu waypoint
         for order in itertools.permutations(waypoints):
             total_steps = 0
             current = start_pos
@@ -1617,6 +1773,7 @@ class MazeSolver:
         if best is None:
             return None
 
+        # Dung lai thuat toan de phuc hoi duong di chi tiet
         visited_order: List[Tuple[int, int]] = []
         full_path: List[Tuple[int, int]] = []
         current = start_pos
@@ -1647,9 +1804,11 @@ class MazeSolver:
         }
 
     def animate_waypoint_scan(self, scan_visited: List[Tuple[int, int]], algorithm: str):
+        # Mo phong qua trinh quet waypoint tren giao dien.
         if not scan_visited:
             return
 
+        # Theo doi so waypoint da duyet
         total_waypoints = len(self.waypoints)
         seen_waypoints = set()
         waypoint_set = set(self.waypoints)
@@ -1680,10 +1839,12 @@ class MazeSolver:
                     self.ui_pump(visit_delay)
 
     def solve_maze(self):
+        # Giai me cung theo che do waypoint va animate ket qua.
         if self.is_animating:
             return
 
         if self.waypoint_all_mode:
+            # Che do bat buoc qua tat ca waypoint
             if not self.waypoints:
                 self.status_label.config(text="Không có điểm mốc được sinh.")
                 return
@@ -1761,6 +1922,7 @@ class MazeSolver:
             return
 
         if self.waypoint_mode:
+            # Che do qua 1 waypoint toi uu
             if not self.waypoints:
                 self.status_label.config(text="Không có điểm mốc được sinh.")
                 return
@@ -1842,6 +2004,7 @@ class MazeSolver:
             )
             return
 
+        # Che do binh thuong
         targets = self.exits
         if not targets:
             self.status_label.config(text="Không có mục tiêu hợp lệ.")
@@ -1907,6 +2070,7 @@ class MazeSolver:
         )
 
     def run(self):
+        # Chay vong lap giao dien chinh.
         self.root.mainloop()
 
 
